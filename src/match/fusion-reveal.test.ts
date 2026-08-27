@@ -18,6 +18,7 @@ describe("fusion reveal data", () => {
       kind: "fusion",
       controller: "player-1",
       card: { ...steamBeast, instanceId: "steam-beast-1" },
+      parentNames: [emberImp.name, tideSerpent.name],
     };
 
     expect(fusionRevealFromEvent([emberImp, tideSerpent], event)).toEqual({
@@ -42,6 +43,7 @@ function revealFixture() {
     kind: "fusion",
     controller: "player-1",
     card: { ...steamBeast, instanceId: "steam-beast-1" },
+    parentNames: [emberImp.name, tideSerpent.name],
   };
   return { data: fusionRevealFromEvent([emberImp, tideSerpent], event) };
 }

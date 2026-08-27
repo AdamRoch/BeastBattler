@@ -82,6 +82,7 @@ export interface PendingSummon extends PendingStackItemBase {
 export interface PendingFusionSummon extends PendingStackItemBase {
   readonly kind: "fusion";
   readonly card: FusionMonsterCard;
+  readonly parentNames: readonly [string, string];
 }
 
 export interface PendingSpell extends PendingStackItemBase {

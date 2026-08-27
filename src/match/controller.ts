@@ -85,6 +85,7 @@ import {
 import {
   installPhaseAdvanceShortcut,
   phaseAdvanceButton,
+  responsePassButton,
 } from "./phase-advance-shortcut";
 import type { SfxEngine } from "../sfx";
 
@@ -713,13 +714,13 @@ export function mountMatch(
         <span class="response-pulse"></span>
         <div>
           <span class="eyebrow">RESPONSE WINDOW</span>
-          <h2>${stackItemLabel(top)}</h2>
+          <h2>${responseWindowMessage(top, mode)}</h2>
           <p>The action is pending. Counter it or let it resolve.</p>
           ${response ? "" : '<p class="response-note">(You don\'t have any instant-speed cards to respond with.)</p>'}
         </div>
         <div class="decision-actions">
           ${response ? '<button class="primary-action response-action" data-action="counter">COUNTERSPELL · 1</button>' : ""}
-          <button class="primary-action response-action" data-action="pass-response">PASS</button>
+          ${responsePassButton()}
         </div>
       </section>
     `;
@@ -1993,17 +1994,23 @@ function hasReadyAttackers(state: MatchState, playerId: PlayerId): boolean {
   );
 }
 
-function stackItemLabel(item: PendingStackItem | undefined): string {
+export function responseWindowMessage(
+  item: PendingStackItem | undefined,
+  mode: MatchMode | "online",
+): string {
   if (!item) {
-    return "Pending action";
+    return "An action is pending.";
   }
+  const actor = mode === "hotseat"
+    ? `Player ${item.controller === HUMAN ? 1 : 2}`
+    : "Your opponent";
   if (item.kind === "summon") {
-    return `${item.card.name} summon`;
+    return `${actor} has summoned ${item.card.name}.`;
   }
   if (item.kind === "fusion") {
-    return `${item.card.name} fusion summon`;
+    return `${actor} is fusing ${item.parentNames.join(" + ")}.`;
   }
-  return `${item.card.name} spell`;
+  return `${actor} has cast ${item.card.name}.`;
 }
 
 function sideFor(playerId: PlayerId): "player" | "opponent" {

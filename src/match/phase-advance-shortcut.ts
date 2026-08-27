@@ -21,12 +21,15 @@ interface KeyboardEventTarget {
 type ShortcutAction = "advance" | "attack";
 
 export function phaseAdvanceButton(label: string, action: ShortcutAction = "advance"): string {
-  return `<button class="primary-action phase-advance-action" data-action="${action}" data-phase-advance>${label}<span class="key-hint" aria-hidden="true">⏎</span><span class="sr-only"> Press Enter</span></button>`;
+  return `<button class="primary-action phase-advance-action" data-action="${action}" data-phase-advance>${label}${enterHint()}</button>`;
+}
+
+export function responsePassButton(): string {
+  return `<button class="primary-action response-action phase-advance-action" data-action="pass-response" data-response-pass>PASS${enterHint()}</button>`;
 }
 
 export function phaseAdvanceShortcutBlocked(state: PhaseAdvanceShortcutState): boolean {
   return state.targetingActive ||
-    state.responseWindowOpen ||
     state.mulliganDecisionPending ||
     state.hotseatCurtainOpen;
 }
@@ -38,16 +41,21 @@ export function installPhaseAdvanceShortcut(
   state: () => PhaseAdvanceShortcutState,
 ): () => void {
   const handleKeydown = (event: KeyboardEvent): void => {
+    const shortcutState = state();
     if (
       event.key !== "Enter" ||
       event.defaultPrevented ||
       isTextEntry(activeElement()) ||
-      phaseAdvanceShortcutBlocked(state())
+      phaseAdvanceShortcutBlocked(shortcutState)
     ) {
       return;
     }
 
-    const button = root.querySelector("[data-phase-advance]:not(:disabled)");
+    const button = root.querySelector(
+      shortcutState.responseWindowOpen
+        ? "[data-response-pass]:not(:disabled)"
+        : "[data-phase-advance]:not(:disabled)",
+    );
     if (!button) {
       return;
     }
@@ -65,4 +73,8 @@ function isTextEntry(element: Element | null): boolean {
     return false;
   }
   return element.matches("input, textarea, select, [contenteditable='true']");
+}
+
+function enterHint(): string {
+  return '<span class="key-hint" aria-hidden="true">⏎</span><span class="sr-only"> Press Enter</span>';
 }

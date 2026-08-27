@@ -58,6 +58,9 @@ describe("fusion prompts and creation", () => {
     ]);
     expect(getPlayer(fused, "player-1").monsters).toEqual([]);
     expect(fused.stack[0]?.kind).toBe("fusion");
+    expect(fused.stack[0]).toMatchObject({
+      parentNames: ["Ember Imp", "Tide Serpent"],
+    });
     fused = passResponse(fused, "player-2");
     const player = getPlayer(fused, "player-1");
     const fusion = player.monsters[0];
