@@ -59,6 +59,11 @@ import {
   DrawAnimationQueue,
   type QueuedDraw,
 } from "./draw-animation";
+import {
+  createFusionRevealOverlay,
+  fusionRevealFromEvent,
+  type FusionRevealData,
+} from "./fusion-reveal";
 import { boardZoneMarkup } from "./board-zone";
 import {
   applyCoachMarkTargets,
@@ -161,6 +166,7 @@ export function mountMatch(
   drawLayer.className = "draw-animation-layer";
   drawLayer.setAttribute("aria-hidden", "true");
   root.append(drawLayer);
+  const fusionReveal = createFusionRevealOverlay(root, cardArt);
 
   const initialExtraDecks: Record<PlayerId, readonly FusionMonsterCard[]> = {
     "player-1": deriveExtraDeck(playerOneArchetype),
@@ -201,6 +207,7 @@ export function mountMatch(
   const sceneIds = new Set<string>();
   const retainedSceneIds = new Set<string>();
   const pendingFusionSources = new Map<string, readonly [string, string]>();
+  const pendingFusionReveals = new Map<string, FusionRevealData>();
   const summonTip = createSummonTipTracker();
   const coachMarks = createCoachMarkTracker();
   let unsubscribeOnline = () => {};
@@ -1043,7 +1050,7 @@ export function mountMatch(
     const before = state;
     const oldStack = [...state.stack];
     const result = runAiTurn(state, AI, { stopAtEmptyCombat: true });
-    registerAiFusionActions(result.actions, result.state);
+    registerAiFusionActions(before, result.actions, result.state);
     state = result.state;
 
     if (oldStack.length > 0 && result.actions.some((action) => action.kind === "pass-response")) {
@@ -1069,6 +1076,7 @@ export function mountMatch(
   }
 
   function registerAiFusionActions(
+    before: MatchState,
     actions: readonly AiAction[],
     nextState: MatchState,
   ): void {
@@ -1078,9 +1086,29 @@ export function mountMatch(
     );
     const pendingFusion = nextState.stack.find((item) => item.kind === "fusion");
     if (fusionAction && pendingFusion) {
-      pendingFusionSources.set(pendingFusion.stackId, fusionAction.parentIds);
+      registerPendingFusion(before, pendingFusion, fusionAction.parentIds);
       fusionAction.parentIds.forEach((id) => retainedSceneIds.add(id));
     }
+  }
+
+  function registerPendingFusion(
+    before: MatchState,
+    pending: Extract<PendingStackItem, { kind: "fusion" }>,
+    sourceIds: readonly [string, string],
+  ): void {
+    pendingFusionSources.set(pending.stackId, sourceIds);
+    const first = findMonster(before, sourceIds[0]);
+    const second = findMonster(before, sourceIds[1]);
+    if (
+      first?.card.category !== "base-monster" ||
+      second?.card.category !== "base-monster"
+    ) {
+      return;
+    }
+    pendingFusionReveals.set(
+      pending.stackId,
+      fusionRevealFromEvent([first.card, second.card], pending),
+    );
   }
 
   function animateAiImmediateActions(
@@ -1128,6 +1156,10 @@ export function mountMatch(
     const outcome = resolveStackEvents(stack);
     for (const item of outcome.resolved) {
       if (item.kind === "fusion") {
+        const reveal = pendingFusionReveals.get(item.stackId);
+        if (reveal) {
+          fusionReveal.show(reveal);
+        }
         const sources = pendingFusionSources.get(item.stackId);
         if (sources && sources.every((id) => arena.getMonster(id))) {
           const resultObject = createMonsterModel(item.card.name as AssignedMonsterId);
@@ -1152,6 +1184,7 @@ export function mountMatch(
           }, 2450);
         }
         pendingFusionSources.delete(item.stackId);
+        pendingFusionReveals.delete(item.stackId);
         continue;
       }
       if (item.kind === "spell") {
@@ -1167,6 +1200,7 @@ export function mountMatch(
           retireMonster(id, false);
         });
         pendingFusionSources.delete(item.stackId);
+        pendingFusionReveals.delete(item.stackId);
       }
     }
 
@@ -1660,10 +1694,6 @@ export function mountMatch(
           return;
         }
         if (online) {
-          const pending = state.stack.find((item) => item.kind === "fusion");
-          if (pending) {
-            pendingFusionSources.set(pending.stackId, [first, second]);
-          }
           sendOnlineIntent({ kind: "fuse", parentIds: [first, second] }, "Fusion sent to the server.");
           return;
         }
@@ -1671,7 +1701,7 @@ export function mountMatch(
           const next = fuseMonsters(state, localPlayerId(), [first, second]);
           const pending = next.stack.find((item) => item.kind === "fusion");
           if (pending) {
-            pendingFusionSources.set(pending.stackId, [first, second]);
+            registerPendingFusion(state, pending, [first, second]);
             retainedSceneIds.add(first);
             retainedSceneIds.add(second);
           }
@@ -1777,6 +1807,7 @@ export function mountMatch(
         sceneIds.clear();
         retainedSceneIds.clear();
         pendingFusionSources.clear();
+        pendingFusionReveals.clear();
         selectedAttackers.clear();
         pendingTarget = null;
         targetConfirmation = null;
@@ -1848,12 +1879,14 @@ export function mountMatch(
       sceneIds.clear();
       retainedSceneIds.clear();
       pendingFusionSources.clear();
+      pendingFusionReveals.clear();
       unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
       removePhaseAdvanceShortcut();
       hud.remove();
       drawLayer.remove();
+      fusionReveal.dispose();
       art.dispose();
     },
   };
