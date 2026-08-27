@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Bundler",
+    "rootDir": "src",
+    "outDir": "dist/server",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/rules/**/*.ts", "src/cards/catalog.ts", "src/server/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
+}
