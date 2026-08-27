@@ -98,6 +98,7 @@ export function fuseMonsters(
     kind: "fusion",
     controller: playerId,
     card: fusionCard,
+    parentNames: [firstParent.card.name, secondParent.card.name],
   };
   const fusedState = updatePlayer(state, playerId, (currentPlayer) => ({
     ...currentPlayer,

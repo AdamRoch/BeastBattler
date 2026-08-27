@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   installPhaseAdvanceShortcut,
   phaseAdvanceButton,
+  responsePassButton,
   type PhaseAdvanceShortcutState,
 } from "./phase-advance-shortcut";
 
@@ -51,6 +52,14 @@ describe("phase advance Enter shortcut", () => {
     expect(button).toContain('class="key-hint" aria-hidden="true">⏎');
   });
 
+  it("marks PASS for Enter without marking COUNTERSPELL", () => {
+    const button = responsePassButton();
+
+    expect(button).toContain('data-action="pass-response"');
+    expect(button).toContain("data-response-pass");
+    expect(button).toContain('class="key-hint" aria-hidden="true">⏎');
+  });
+
   it("clicks the rendered phase advance button", () => {
     const keys = new FakeKeyTarget();
     let clicks = 0;
@@ -71,7 +80,6 @@ describe("phase advance Enter shortcut", () => {
 
   it.each([
     ["a targeting prompt", { ...clearState, targetingActive: true }],
-    ["a response window", { ...clearState, responseWindowOpen: true }],
     ["a mulligan decision", { ...clearState, mulliganDecisionPending: true }],
     ["a hotseat curtain", { ...clearState, hotseatCurtainOpen: true }],
   ])("does not click while %s is active", (_name, blockedState) => {
@@ -86,6 +94,26 @@ describe("phase advance Enter shortcut", () => {
 
     expect(keys.pressEnter()).toBe(false);
     expect(clicks).toBe(0);
+  });
+
+  it("clicks PASS, never COUNTERSPELL, in a response window", () => {
+    const keys = new FakeKeyTarget();
+    let passClicks = 0;
+    let counterClicks = 0;
+    installPhaseAdvanceShortcut(
+      keys,
+      {
+        querySelector: (selector) => selector.includes("data-response-pass")
+          ? { click: () => { passClicks += 1; } }
+          : { click: () => { counterClicks += 1; } },
+      },
+      () => null,
+      () => ({ ...clearState, responseWindowOpen: true }),
+    );
+
+    expect(keys.pressEnter()).toBe(true);
+    expect(passClicks).toBe(1);
+    expect(counterClicks).toBe(0);
   });
 
   it("does not click while a text input has focus", () => {

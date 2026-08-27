@@ -375,6 +375,7 @@ function pendingFusion(): PendingStackItem {
     kind: "fusion",
     controller: HUMAN,
     card: fusionCard("steam-beast", "human-fusion"),
+    parentNames: ["Ember Imp", "Tide Serpent"],
   };
 }
 
