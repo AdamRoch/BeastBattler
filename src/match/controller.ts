@@ -61,6 +61,7 @@ import {
   type PrivacyCurtainRequest,
 } from "./privacy-curtain";
 import type { SfxEngine } from "../sfx";
+import type { MatchIntent } from "../server/protocol";
 
 const HUMAN: PlayerId = "player-1";
 const AI: PlayerId = "player-2";
@@ -87,12 +88,31 @@ export interface MatchController {
 
 export type MatchMode = "ai" | "hotseat";
 
+export interface OnlineMatchUpdate {
+  readonly state?: MatchState;
+  readonly combat?: AttackDeclaration | null;
+  readonly notice?: string;
+}
+
+/**
+ * The online controller never changes its MatchState itself. This adapter
+ * supplies server-filtered snapshots and receives the player's intents.
+ */
+export interface OnlineMatchAdapter {
+  getState(): MatchState | null;
+  subscribe(listener: (update: OnlineMatchUpdate) => void): () => void;
+  sendIntent(intent: MatchIntent): void;
+  requestRematch(): void;
+  leaveMatch(): void;
+}
+
 export interface MatchControllerOptions {
-  readonly mode?: MatchMode;
+  readonly mode?: MatchMode | "online";
   readonly playerOneArchetype?: ArchetypeId;
   readonly playerTwoArchetype?: ArchetypeId;
   readonly onComplete?: (result: MatchResult) => void;
   readonly sfx?: SfxEngine;
+  readonly online?: OnlineMatchAdapter;
 }
 
 export function mountMatch(
@@ -101,6 +121,10 @@ export function mountMatch(
   options: MatchControllerOptions = {},
 ): MatchController {
   const mode = options.mode ?? "ai";
+  const online = options.online;
+  if (mode === "online" && !online) {
+    throw new Error("Online matches require an authoritative match adapter");
+  }
   const playerOneArchetype = options.playerOneArchetype ?? HUMAN_ARCHETYPE;
   const playerTwoArchetype = options.playerTwoArchetype ?? AI_ARCHETYPE;
   const art = createCardArtRenderer({ width: 176, height: 246 });
@@ -112,7 +136,7 @@ export function mountMatch(
     "player-1": deriveExtraDeck(playerOneArchetype),
     "player-2": deriveExtraDeck(playerTwoArchetype),
   };
-  let state = newMatch();
+  let state = online?.getState() ?? newMatch();
   let viewingPlayer: PlayerId = HUMAN;
   let privacyCurtain: PrivacyCurtainRequest | null = mode === "hotseat"
     ? { playerId: HUMAN, reason: "turn" }
@@ -136,6 +160,7 @@ export function mountMatch(
   const sceneIds = new Set<string>();
   const retainedSceneIds = new Set<string>();
   const pendingFusionSources = new Map<string, readonly [string, string]>();
+  let unsubscribeOnline = () => {};
 
   arena.setSideElement("player", primaryElement(playerOneArchetype));
   arena.setSideElement("opponent", primaryElement(playerTwoArchetype));
@@ -494,6 +519,7 @@ export function mountMatch(
           <h1>${heading}</h1>
           <p>${current.result?.reason === "deck-out" ? "A battler ran out of cards." : "A life counter reached zero."}</p>
           <button class="primary-action" data-action="rematch">REMATCH</button>
+          ${mode === "online" ? '<button class="quiet-action" data-action="leave-match">LEAVE MATCH</button>' : ""}
         </section>
       </div>
     `;
@@ -579,6 +605,29 @@ export function mountMatch(
     if (!card) {
       return;
     }
+    if (online) {
+      if (card.kind === "land") {
+        sendOnlineIntent({ kind: "play-land", cardId }, `${card.name} sent to the server.`);
+        return;
+      }
+      if (card.kind === "monster") {
+        sendOnlineIntent({ kind: "summon", cardId }, `${card.name} sent to the server.`);
+        return;
+      }
+      if (card.id === "counterspell") {
+        notice = "Counterspell can only be played in a response window.";
+        render();
+        return;
+      }
+      if (card.id === "draw") {
+        castLocalSpell(card, null);
+        return;
+      }
+      pendingTarget = { cardId, spellId: card.id };
+      notice = `Choose a target for ${card.name}.`;
+      render();
+      return;
+    }
     try {
       if (card.kind === "land") {
         applyState(playLand(state, playerId, cardId), `${card.name} entered ready.`);
@@ -615,6 +664,13 @@ export function mountMatch(
       render();
       return;
     }
+    if (sendOnlineIntent(
+      { kind: "cast-spell", cardId: card.instanceId, target, payWith },
+      `${card.name} sent to the server.`,
+    )) {
+      pendingTarget = null;
+      return;
+    }
     try {
       pendingTarget = null;
       applyState(
@@ -637,12 +693,46 @@ export function mountMatch(
     scheduleEmptyCombatSkip();
   }
 
+  function sendOnlineIntent(intent: MatchIntent, message: string): boolean {
+    if (!online) {
+      return false;
+    }
+    online.sendIntent(intent);
+    notice = message;
+    render();
+    return true;
+  }
+
+  function applyOnlineUpdate(update: OnlineMatchUpdate): void {
+    if (disposed) {
+      return;
+    }
+    if (update.state) {
+      const before = state;
+      const oldStack = [...state.stack];
+      state = update.state;
+      pendingAttack = update.combat ?? null;
+      if (oldStack.length > 0 && state.stack.length === 0) {
+        animateStackResolution(oldStack, state);
+      } else {
+        syncScene(before, state);
+      }
+    }
+    if (update.notice) {
+      notice = update.notice;
+    }
+    render();
+  }
+
   function shouldSkipEmptyCombat(): boolean {
     return state.phase === "combat" && !state.responsePlayer &&
       !hasReadyAttackers(state, state.activePlayer);
   }
 
   function scheduleEmptyCombatSkip(): void {
+    if (online) {
+      return;
+    }
     window.clearTimeout(emptyCombatTimer);
     emptyCombatTimer = undefined;
     if (!shouldSkipEmptyCombat()) {
@@ -664,6 +754,9 @@ export function mountMatch(
   }
 
   function resolveResponse(playerId: PlayerId): void {
+    if (sendOnlineIntent({ kind: "pass-response" }, "Pass sent to the server.")) {
+      return;
+    }
     const before = state;
     const stack = [...state.stack];
     try {
@@ -945,6 +1038,13 @@ export function mountMatch(
       render();
       return;
     }
+    if (sendOnlineIntent(
+      { kind: "declare-attackers", attackerIds },
+      "Attack declaration sent to the server.",
+    )) {
+      selectedAttackers.clear();
+      return;
+    }
     try {
       const declaration = declareAttackers(state, attackerId, attackerIds);
       if (mode === "hotseat") {
@@ -989,6 +1089,12 @@ export function mountMatch(
           blockerId: select.value,
         });
       }
+    }
+    if (sendOnlineIntent(
+      { kind: "assign-blockers", blocks },
+      "Blocks sent to the server.",
+    )) {
+      return;
     }
     try {
       const defenderId = localPlayerId();
@@ -1044,6 +1150,19 @@ export function mountMatch(
 
   function advanceLocalPhase(): void {
     const playerId = localPlayerId();
+    if (online) {
+      const player = getPlayer(state, playerId);
+      const excess = state.phase === "end" ? Math.max(0, player.hand.length - 7) : 0;
+      if (excess > 0) {
+        sendOnlineIntent(
+          { kind: "discard", cardIds: player.hand.slice(0, excess).map((card) => card.instanceId) },
+          "Discard sent to the server.",
+        );
+      } else {
+        sendOnlineIntent({ kind: "advance-phase" }, "Phase change sent to the server.");
+      }
+      return;
+    }
     try {
       if (state.phase === "end") {
         const player = getPlayer(state, playerId);
@@ -1069,6 +1188,12 @@ export function mountMatch(
     const payWith = firstReadyElement(state, playerId);
     const target = state.stack.at(-1);
     if (!card || !payWith || !target) {
+      return;
+    }
+    if (sendOnlineIntent(
+      { kind: "counterspell", cardId: card.instanceId, targetStackId: target.stackId, payWith },
+      "Counterspell sent to the server.",
+    )) {
       return;
     }
     try {
@@ -1135,6 +1260,12 @@ export function mountMatch(
   }
 
   function chooseMulligan(choice: "keep" | "mulligan"): void {
+    if (sendOnlineIntent(
+      { kind: choice === "keep" ? "keep-hand" : "mulligan" },
+      choice === "keep" ? "Keep sent to the server." : "Mulligan sent to the server.",
+    )) {
+      return;
+    }
     const before = state;
     const playerId = localPlayerId();
     if (choice === "keep") {
@@ -1202,6 +1333,9 @@ export function mountMatch(
         return;
       case "hold":
         selectedAttackers.clear();
+        if (sendOnlineIntent({ kind: "hold-attack" }, "Hold sent to the server.")) {
+          return;
+        }
         advanceLocalPhase();
         return;
       case "attack":
@@ -1214,6 +1348,14 @@ export function mountMatch(
         const first = button.dataset.parentA;
         const second = button.dataset.parentB;
         if (!first || !second) {
+          return;
+        }
+        if (online) {
+          const pending = state.stack.find((item) => item.kind === "fusion");
+          if (pending) {
+            pendingFusionSources.set(pending.stackId, [first, second]);
+          }
+          sendOnlineIntent({ kind: "fuse", parentIds: [first, second] }, "Fusion sent to the server.");
           return;
         }
         try {
@@ -1239,6 +1381,12 @@ export function mountMatch(
         const fusionId = button.dataset.fusionId;
         const baseId = button.dataset.baseId;
         if (!fusionId || !baseId) {
+          return;
+        }
+        if (sendOnlineIntent(
+          { kind: "upgrade-fusion", fusionCardId: fusionId, baseMonsterCardId: baseId },
+          "Fusion upgrade sent to the server.",
+        )) {
           return;
         }
         try {
@@ -1287,6 +1435,12 @@ export function mountMatch(
         resolveBlocks(false);
         return;
       case "rematch":
+        if (online) {
+          online.requestRematch();
+          notice = "Rematch request sent. Waiting for your opponent.";
+          render();
+          return;
+        }
         clearAnimationTimers();
         for (const id of [...sceneIds]) {
           arena.removeMonster(id);
@@ -1314,6 +1468,11 @@ export function mountMatch(
         }
         render();
         return;
+      case "leave-match":
+        if (online) {
+          online.leaveMatch();
+        }
+        return;
     }
   }
 
@@ -1322,6 +1481,7 @@ export function mountMatch(
     render();
   }
 
+  unsubscribeOnline = online?.subscribe(applyOnlineUpdate) ?? (() => {});
   hud.addEventListener("click", handleClick);
   render();
 
@@ -1338,6 +1498,7 @@ export function mountMatch(
       sceneIds.clear();
       retainedSceneIds.clear();
       pendingFusionSources.clear();
+      unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
       hud.remove();
