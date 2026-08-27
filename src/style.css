@@ -2051,3 +2051,50 @@ canvas {
   .result-game-title-original { visibility: hidden; }
   .result-game-title-replacement { opacity: 1; transform: none; }
 }
+
+/* CARD-49: spell effect tooltip. */
+.spell-tooltip {
+  position: fixed;
+  z-index: 24;
+  width: min(248px, calc(100vw - 24px));
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(128, 231, 255, 0.72);
+  border-radius: 4px 12px 12px 4px;
+  background:
+    linear-gradient(125deg, rgba(44, 164, 206, 0.2), transparent 43%),
+    rgba(3, 11, 20, 0.96);
+  box-shadow: 0 0 0 1px rgba(114, 219, 255, 0.12) inset, 0 12px 30px rgba(0, 0, 0, 0.48), 0 0 22px rgba(65, 211, 255, 0.17);
+  color: #dff8ff;
+  pointer-events: none;
+  user-select: none;
+}
+
+.spell-tooltip[hidden] { display: none; }
+
+.spell-tooltip-timing {
+  margin: 0;
+  color: #76dff7;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.spell-tooltip-name {
+  margin: 3px 0 9px;
+  color: #f1fdff;
+  font-size: 15px;
+  letter-spacing: 0.025em;
+}
+
+.spell-tooltip-effect {
+  margin: 0;
+  padding-top: 7px;
+  border-top: 1px solid rgba(129, 218, 245, 0.14);
+  color: #a9c5d1;
+  font-size: 9px;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+}
+
+.spell-tooltip-trigger { cursor: help; }

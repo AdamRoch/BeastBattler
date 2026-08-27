@@ -9,6 +9,7 @@ import {
   SPELLS,
   assembleDeck,
   deriveExtraDeck,
+  findSpellDefinition,
   type BaseMonsterCard,
   type SpellCardInstance,
 } from "./catalog";
@@ -89,6 +90,7 @@ describe("the PRD card chart", () => {
         cost: 1,
         timing: "sorcery",
         effect: { kind: "damage", amount: 2, target: "any" },
+        rulesText: "Deal 2 damage to any monster or player.",
       },
       {
         id: "destroy",
@@ -98,6 +100,7 @@ describe("the PRD card chart", () => {
         cost: 1,
         timing: "sorcery",
         effect: { kind: "destroy", target: "monster" },
+        rulesText: "Destroy any creature regardless of its health.",
       },
       {
         id: "draw",
@@ -107,6 +110,7 @@ describe("the PRD card chart", () => {
         cost: 1,
         timing: "sorcery",
         effect: { kind: "draw", count: 2 },
+        rulesText: "Draw 2 cards.",
       },
       {
         id: "counterspell",
@@ -116,8 +120,16 @@ describe("the PRD card chart", () => {
         cost: 1,
         timing: "instant",
         effect: { kind: "counter", target: "monster-summon-or-spell" },
+        rulesText: "Counter a monster summon or spell.",
       },
     ]);
+  });
+
+  it("looks up plain-language spell effect text by spell ID", () => {
+    expect(findSpellDefinition("destroy")?.rulesText).toBe(
+      "Destroy any creature regardless of its health.",
+    );
+    expect(findSpellDefinition("not-a-spell")).toBeUndefined();
   });
 });
 
