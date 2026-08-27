@@ -53,4 +53,15 @@ describe("createArenaScene", () => {
 
     expect(events).toEqual(["summon"]);
   });
+
+  it("maps live summoning sickness onto the placed monster", () => {
+    const arena = createArenaScene(16 / 9);
+    const monster = arena.placeMonster("Ember Imp", { side: "player", slot: 0 });
+
+    arena.setMonsterSummoningSickness("Ember Imp", true);
+    expect(monster.getObjectByName("summoning-sickness-indicator")).toBeTruthy();
+
+    arena.setMonsterSummoningSickness("Ember Imp", false);
+    expect(monster.getObjectByName("summoning-sickness-indicator")).toBeUndefined();
+  });
 });

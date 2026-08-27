@@ -7,6 +7,10 @@ import {
 } from "./scene/animations";
 import { updateHologramTime } from "./scene/hologram";
 import {
+  setSummoningSicknessIndicator,
+  updateSummoningSicknessIndicator,
+} from "./scene/summoning-sickness";
+import {
   createArenaLighting,
   type ArenaElement,
 } from "./scene/lighting";
@@ -54,6 +58,7 @@ export interface ArenaScene {
   ): THREE.Object3D;
   getMonster(monsterId: string): THREE.Object3D | undefined;
   getMonsterAt(zone: MonsterZone): THREE.Object3D | undefined;
+  setMonsterSummoningSickness(monsterId: string, summoningSick: boolean): void;
   setSideElement(side: PlayerSide, element: ArenaElement): void;
   dispatchAnimation(event: ArenaAnimationEvent): void;
   onAnimationEvent(listener: ArenaAnimationListener): () => void;
@@ -234,6 +239,7 @@ export function createArenaScene(aspect: number): ArenaScene {
 
     for (const placement of monsters.values()) {
       updateHologramTime(placement.object, elapsedSeconds);
+      updateSummoningSicknessIndicator(placement.object, elapsedSeconds);
     }
     animations.update(elapsedSeconds);
   }
@@ -250,6 +256,13 @@ export function createArenaScene(aspect: number): ArenaScene {
     stageFusion,
     getMonster: (monsterId) => monsters.get(monsterId)?.object,
     getMonsterAt,
+    setMonsterSummoningSickness(monsterId, summoningSick) {
+      const monster = monsters.get(monsterId)?.object;
+      if (!monster) {
+        return;
+      }
+      setSummoningSicknessIndicator(monster, summoningSick);
+    },
     setSideElement: lighting.setSideElement,
     dispatchAnimation,
     onAnimationEvent(listener) {
