@@ -61,6 +61,7 @@ export interface SpellDefinition extends Omit<SpellCard, "instanceId"> {
   readonly cost: 1;
   readonly timing: "sorcery" | "instant";
   readonly effect: SpellEffect;
+  readonly rulesText: string;
 }
 
 export type CardDefinition =
@@ -122,6 +123,7 @@ export const SPELLS = [
     cost: 1,
     timing: "sorcery",
     effect: { kind: "damage", amount: 2, target: "any" },
+    rulesText: "Deal 2 damage to any monster or player.",
   },
   {
     id: "destroy",
@@ -131,6 +133,7 @@ export const SPELLS = [
     cost: 1,
     timing: "sorcery",
     effect: { kind: "destroy", target: "monster" },
+    rulesText: "Destroy any creature regardless of its health.",
   },
   {
     id: "draw",
@@ -140,6 +143,7 @@ export const SPELLS = [
     cost: 1,
     timing: "sorcery",
     effect: { kind: "draw", count: 2 },
+    rulesText: "Draw 2 cards.",
   },
   {
     id: "counterspell",
@@ -149,6 +153,7 @@ export const SPELLS = [
     cost: 1,
     timing: "instant",
     effect: { kind: "counter", target: "monster-summon-or-spell" },
+    rulesText: "Counter a monster summon or spell.",
   },
 ] as const satisfies readonly SpellDefinition[];
 
@@ -157,6 +162,10 @@ export const CARD_CATALOG: readonly CardDefinition[] = [
   ...FUSION_MONSTERS,
   ...SPELLS,
 ];
+
+export function findSpellDefinition(spellId: string): SpellDefinition | undefined {
+  return SPELLS.find((spell) => spell.id === spellId);
+}
 
 export const ARCHETYPES = [
   { id: "fire-water", elements: ["fire", "water"] },

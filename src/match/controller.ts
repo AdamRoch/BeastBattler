@@ -77,6 +77,10 @@ import {
   monsterTooltipContent,
 } from "../scene/monster-tooltip";
 import {
+  createSpellTooltip,
+  spellTooltipContent,
+} from "../scene/spell-tooltip";
+import {
   damageOutcome,
   isRecommendedTarget,
   monsterTargetLabel,
@@ -191,6 +195,7 @@ export function mountMatch(
   root.append(hud);
   const arenaCanvas = root.querySelector<HTMLCanvasElement>("canvas");
   const monsterTooltip = createMonsterTooltip(root);
+  const spellTooltip = createSpellTooltip(root);
   const drawLayer = document.createElement("div");
   drawLayer.className = "draw-animation-layer";
   drawLayer.setAttribute("aria-hidden", "true");
@@ -288,6 +293,7 @@ export function mountMatch(
 
   function render(): void {
     hideMonsterTooltip();
+    hideSpellTooltip();
     drawQueue.enqueueTransition(renderedState, state);
     renderedState = state;
     syncMatchSfx();
@@ -426,11 +432,15 @@ export function mountMatch(
     const highlighted = highlightedCardIds.has(card.instanceId)
       ? " is-newly-drawn"
       : "";
+    const spellTooltipId = card.kind === "spell"
+      ? ` data-spell-tooltip-id="${card.id}"`
+      : "";
     return `
       <button
         class="hand-card${playable}${highlighted}"
         data-action="play-card"
         data-card-id="${card.instanceId}"
+        ${spellTooltipId}
         style="--fan-index:${offset}; --fan-total:${count}"
         aria-label="Play ${card.name}"
       >
@@ -755,7 +765,7 @@ export function mountMatch(
     const monsters = [...other.monsters, ...local.monsters];
     return `
       <section class="floating-prompt targeting-prompt" data-testid="targeting-prompt">
-        <span class="eyebrow">${target.spellId.toUpperCase()}</span>
+        <span class="eyebrow spell-tooltip-trigger" data-spell-tooltip-id="${card.id}">${target.spellId.toUpperCase()}</span>
         <h2>${damageAmount === null ? "Choose a target" : `${card.name} · deal ${damageAmount} damage`}</h2>
         <div class="prompt-options">
           ${playerTargets}
@@ -1402,6 +1412,27 @@ export function mountMatch(
     monsterTooltip.hide();
   }
 
+  function handleSpellTooltipPointerMove(event: PointerEvent): void {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      hideSpellTooltip();
+      return;
+    }
+
+    const trigger = target.closest<HTMLElement>("[data-spell-tooltip-id]");
+    const content = spellTooltipContent(trigger?.dataset.spellTooltipId ?? "");
+    if (!content) {
+      hideSpellTooltip();
+      return;
+    }
+
+    spellTooltip.show(content, event.clientX, event.clientY);
+  }
+
+  function hideSpellTooltip(): void {
+    spellTooltip.hide();
+  }
+
   function dismissCoachMarkForCard(cardId: string): void {
     if (!coachMarks.dismissForCard(cardId)) {
       return;
@@ -1955,6 +1986,8 @@ export function mountMatch(
 
   unsubscribeOnline = online?.subscribe(applyOnlineUpdate) ?? (() => {});
   hud.addEventListener("click", handleClick);
+  hud.addEventListener("pointermove", handleSpellTooltipPointerMove);
+  hud.addEventListener("pointerleave", hideSpellTooltip);
   arenaCanvas?.addEventListener("pointermove", handleMonsterPointerMove);
   arenaCanvas?.addEventListener("pointerleave", hideMonsterTooltip);
   const repositionCoachMarkPointers = () =>
@@ -1993,6 +2026,8 @@ export function mountMatch(
       unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
+      hud.removeEventListener("pointermove", handleSpellTooltipPointerMove);
+      hud.removeEventListener("pointerleave", hideSpellTooltip);
       arenaCanvas?.removeEventListener("pointermove", handleMonsterPointerMove);
       arenaCanvas?.removeEventListener("pointerleave", hideMonsterTooltip);
       hideMonsterTooltip();
@@ -2002,6 +2037,7 @@ export function mountMatch(
       drawLayer.remove();
       fusionReveal.dispose();
       monsterTooltip.dispose();
+      spellTooltip.dispose();
       art.dispose();
     },
   };
