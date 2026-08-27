@@ -55,6 +55,7 @@ import {
 } from "../rules/spells";
 import { resolveStackEvents } from "./events";
 import { boardZoneMarkup } from "./board-zone";
+import { createSummonTipTracker } from "./summon-tip";
 import {
   privacyCurtainForTransition,
   privacyCurtainMarkup,
@@ -68,6 +69,7 @@ const AI: PlayerId = "player-2";
 const HUMAN_ARCHETYPE: ArchetypeId = "fire-water";
 const AI_ARCHETYPE: ArchetypeId = "earth-lightning";
 const EMPTY_COMBAT_DELAY_MS = 800;
+const SUMMON_TIP_DURATION_MS = 2_000;
 
 interface PendingTarget {
   readonly cardId: string;
@@ -153,6 +155,8 @@ export function mountMatch(
   let disposed = false;
   let completionReported = false;
   let resultSfxPlayed = false;
+  let summonTipVisible = false;
+  let summonTipTimer: number | undefined;
   let audioPhase = `${state.turnNumber}:${state.phase}`;
   const audibleLife: Record<PlayerId, number> = {
     "player-1": getPlayer(state, HUMAN).life,
@@ -162,6 +166,7 @@ export function mountMatch(
   const sceneIds = new Set<string>();
   const retainedSceneIds = new Set<string>();
   const pendingFusionSources = new Map<string, readonly [string, string]>();
+  const summonTip = createSummonTipTracker();
   let unsubscribeOnline = () => {};
 
   arena.setSideElement("player", primaryElement(playerOneArchetype));
@@ -288,6 +293,7 @@ export function mountMatch(
       ${!handIsPrivate && state.responsePlayer === localId ? responsePrompt(state) : ""}
       ${!handIsPrivate && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
       ${!handIsPrivate && state.result && !options.onComplete ? resultPrompt(state) : ""}
+      ${summonTipVisible ? '<aside class="summon-tip" data-testid="summon-tip" role="status">Lv1 creatures can\'t attack on their first turn.</aside>' : ""}
       ${privacyCurtainMarkup(privacyCurtain)}
     `;
 
@@ -957,15 +963,24 @@ export function mountMatch(
     const nextMonsters = allMonsters(after);
     const nextIds = new Set(nextMonsters.map((entry) => entry.monster.card.instanceId));
 
+    if (summonTip.shouldShow(before, after, localPlayerId())) {
+      showSummonTip();
+    }
+
     for (const id of [...sceneIds]) {
-      if (!nextIds.has(id) && !retainedSceneIds.has(id)) {
-        retireMonster(id, wasMonsterDestroyed(before, after, id));
+      if (!nextIds.has(id)) {
+        arena.setMonsterSummoningSickness(id, false);
+        if (!retainedSceneIds.has(id)) {
+          retireMonster(id, wasMonsterDestroyed(before, after, id));
+        }
       }
     }
 
     for (const entry of nextMonsters) {
       const id = entry.monster.card.instanceId;
+      const summoningSick = hasSummoningSickness(after, entry.monster);
       if (sceneIds.has(id)) {
+        arena.setMonsterSummoningSickness(id, summoningSick);
         continue;
       }
       const slot = firstOpenSlot(entry.side);
@@ -978,8 +993,20 @@ export function mountMatch(
         createMonsterModel(entry.monster.card.name as AssignedMonsterId),
       );
       sceneIds.add(id);
+      arena.setMonsterSummoningSickness(id, summoningSick);
       arena.dispatchAnimation({ type: "summon", monsterId: id });
     }
+  }
+
+  function showSummonTip(): void {
+    summonTipVisible = true;
+    window.clearTimeout(summonTipTimer);
+    summonTipTimer = window.setTimeout(() => {
+      summonTipVisible = false;
+      if (!disposed) {
+        render();
+      }
+    }, SUMMON_TIP_DURATION_MS);
   }
 
   function retireMonster(monsterId: string, animateDeath: boolean): void {
@@ -1465,6 +1492,9 @@ export function mountMatch(
         pendingTarget = null;
         pendingAttack = null;
         dismissedFusionKey = "";
+        summonTip.reset();
+        summonTipVisible = false;
+        window.clearTimeout(summonTipTimer);
         state = newMatch();
         completionReported = false;
         resultSfxPlayed = false;
@@ -1504,6 +1534,7 @@ export function mountMatch(
       disposed = true;
       window.clearTimeout(aiTimer);
       window.clearTimeout(emptyCombatTimer);
+      window.clearTimeout(summonTipTimer);
       clearAnimationTimers();
       for (const id of [...sceneIds]) {
         arena.removeMonster(id);
