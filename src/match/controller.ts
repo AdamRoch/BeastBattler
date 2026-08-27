@@ -49,6 +49,7 @@ import {
   type FusionOption,
 } from "../rules/fusion";
 import {
+  availableCounterspellResponse,
   castCounterspell,
   castSpell,
   passResponse,
@@ -464,9 +465,7 @@ export function mountMatch(
   function responsePrompt(current: MatchState): string {
     const playerId = localPlayerId();
     const top = current.stack.at(-1);
-    const counter = findCounterspell(getPlayer(current, playerId).hand);
-    const mana = firstReadyElement(current, playerId);
-    const canCounter = Boolean(top && counter && mana);
+    const response = availableCounterspellResponse(current, playerId);
     return `
       <section class="response-prompt" data-testid="response-prompt">
         <span class="response-pulse"></span>
@@ -474,10 +473,11 @@ export function mountMatch(
           <span class="eyebrow">RESPONSE WINDOW</span>
           <h2>${stackItemLabel(top)}</h2>
           <p>The action is pending. Counter it or let it resolve.</p>
+          ${response ? "" : '<p class="response-note">(You don\'t have any instant-speed cards to respond with.)</p>'}
         </div>
         <div class="decision-actions">
-          ${canCounter ? '<button class="primary-action" data-action="counter">COUNTERSPELL · 1</button>' : ""}
-          <button class="quiet-action" data-action="pass-response">PASS</button>
+          ${response ? '<button class="primary-action response-action" data-action="counter">COUNTERSPELL · 1</button>' : ""}
+          <button class="primary-action response-action" data-action="pass-response">PASS</button>
         </div>
       </section>
     `;
@@ -1219,14 +1219,18 @@ export function mountMatch(
 
   function counterPendingAction(): void {
     const playerId = localPlayerId();
-    const card = findCounterspell(getPlayer(state, playerId).hand);
-    const payWith = firstReadyElement(state, playerId);
     const target = state.stack.at(-1);
-    if (!card || !payWith || !target) {
+    const response = availableCounterspellResponse(state, playerId);
+    if (!response || !target) {
       return;
     }
     if (sendOnlineIntent(
-      { kind: "counterspell", cardId: card.instanceId, targetStackId: target.stackId, payWith },
+      {
+        kind: "counterspell",
+        cardId: response.card.instanceId,
+        targetStackId: target.stackId,
+        payWith: response.payWith,
+      },
       "Counterspell sent to the server.",
     )) {
       return;
@@ -1236,9 +1240,9 @@ export function mountMatch(
         castCounterspell(
           state,
           playerId,
-          card.instanceId,
+          response.card.instanceId,
           target.stackId,
-          payWith,
+          response.payWith,
         ),
         "Counterspell added to the stack.",
       );
@@ -1652,14 +1656,6 @@ function hasReadyAttackers(state: MatchState, playerId: PlayerId): boolean {
   return getPlayer(state, playerId).monsters.some(
     (monster) => !hasSummoningSickness(state, monster),
   );
-}
-
-function findCounterspell(cards: readonly GameCard[]): SpellCard | null {
-  const card = cards.find(
-    (candidate): candidate is SpellCard =>
-      candidate.kind === "spell" && candidate.id === "counterspell",
-  );
-  return card ?? null;
 }
 
 function stackItemLabel(item: PendingStackItem | undefined): string {

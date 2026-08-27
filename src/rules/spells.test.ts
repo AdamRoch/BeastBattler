@@ -25,6 +25,7 @@ import {
 } from "./core";
 import { fuseMonsters } from "./fusion";
 import {
+  availableCounterspellResponse,
   castCounterspell,
   castSpell,
   passResponse,
@@ -167,6 +168,51 @@ describe("sorcery spells", () => {
 });
 
 describe("Counterspell response windows", () => {
+  it("finds a legal instant-speed response from the responding hand and mana", () => {
+    const bolt = spell("bolt", "bolt-card");
+    const counterspell = spell("counterspell", "counter-card");
+    let state = mainPhaseState({
+      playerOneHand: [bolt],
+      playerTwoHand: [counterspell],
+      playerOneLands: [readyLand("fire", "p1-fire")],
+      playerTwoLands: [readyLand("water", "p2-water")],
+    });
+    state = castSpell(
+      state,
+      "player-1",
+      bolt.instanceId,
+      { kind: "player", playerId: "player-2" },
+      "fire",
+    );
+
+    expect(availableCounterspellResponse(state, "player-2")).toEqual({
+      card: counterspell,
+      payWith: "water",
+    });
+  });
+
+  it.each([
+    ["has no Counterspell in hand", [], [readyLand("water", "p2-water")]],
+    ["has no ready land", [spell("counterspell", "counter-card")], [spentLand("water", "p2-water")]],
+  ] as const)("has no response when the player %s", (_reason, playerTwoHand, playerTwoLands) => {
+    const bolt = spell("bolt", "bolt-card");
+    let state = mainPhaseState({
+      playerOneHand: [bolt],
+      playerTwoHand,
+      playerOneLands: [readyLand("fire", "p1-fire")],
+      playerTwoLands,
+    });
+    state = castSpell(
+      state,
+      "player-1",
+      bolt.instanceId,
+      { kind: "player", playerId: "player-2" },
+      "fire",
+    );
+
+    expect(availableCounterspellResponse(state, "player-2")).toBeNull();
+  });
+
   it("counters a summon before the monster enters play while card and mana stay spent", () => {
     const summonedMonster = baseCard("ember-imp", "summoned-card");
     const counterspell = spell("counterspell", "counter-card");

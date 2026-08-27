@@ -15,6 +15,34 @@ import {
   type SpellTarget,
 } from "./core";
 
+export interface CounterspellResponse {
+  readonly card: SpellCard;
+  readonly payWith: Element;
+}
+
+/**
+ * Returns the Counterspell and mana the responding player can use now, if any.
+ * The response prompt uses this rather than independently guessing at card or
+ * mana availability.
+ */
+export function availableCounterspellResponse(
+  state: MatchState,
+  playerId: PlayerId,
+): CounterspellResponse | null {
+  if (!canAddCounterspell(state, playerId)) {
+    return null;
+  }
+
+  const player = getPlayer(state, playerId);
+  const card = player.hand.find(
+    (candidate): candidate is SpellCard =>
+      candidate.kind === "spell" && candidate.id === "counterspell",
+  );
+  const payWith = player.lands.find((land) => land.ready)?.card.element;
+
+  return card && payWith ? { card, payWith } : null;
+}
+
 export function castSpell(
   state: MatchState,
   playerId: PlayerId,
@@ -325,6 +353,22 @@ function assertCounterspellWindow(
   if (state.responsePlayer !== playerId || state.stack.length === 0) {
     throw new RulesError("Counterspell requires response priority");
   }
+}
+
+function canAddCounterspell(state: MatchState, playerId: PlayerId): boolean {
+  const topItem = state.stack.at(-1);
+  if (
+    state.result ||
+    state.responsePlayer !== playerId ||
+    !topItem ||
+    topItem.controller === playerId ||
+    state.stack.length >= 3
+  ) {
+    return false;
+  }
+
+  return state.stack.length !== 2 ||
+    (topItem.kind === "spell" && topItem.card.id === "counterspell");
 }
 
 function payForSpell(

@@ -832,6 +832,7 @@ canvas {
 
 .response-prompt h2 { margin-bottom: 2px; }
 .response-prompt p { margin: 0; color: #8ca3b4; font-size: 10px; }
+.response-prompt .response-note { margin-top: 5px; color: #b8cad8; }
 
 .response-pulse {
   width: 18px;
@@ -843,6 +844,15 @@ canvas {
 }
 
 .decision-actions { display: flex; gap: 8px; justify-content: center; }
+
+.response-prompt .decision-actions { gap: 10px; }
+
+.response-prompt .response-action {
+  min-width: 144px;
+  min-height: 50px;
+  padding: 0 20px;
+  font-size: 10px;
+}
 
 .privacy-curtain {
   position: fixed;
@@ -1034,6 +1044,9 @@ canvas {
   .archetype-grid { grid-template-columns: 1fr; }
   .archetype-card { min-height: 140px; }
   .result-actions { flex-direction: column; }
+  .response-prompt { grid-template-columns: auto minmax(0, 1fr); }
+  .response-prompt .decision-actions { grid-column: 2; }
+  .response-prompt .response-action { min-width: 0; flex: 1; }
 }
 
 /* Online lobby */
