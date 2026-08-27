@@ -48,7 +48,15 @@ Prefer rewriting or pruning existing entries over appending new ones.
 
 Production runs on **Railway** (project `beast-battler`, CLI-linked from this repo).
 Redeploy with `railway up --detach` — nixpacks runs `npm ci` + `npm run build`, then
-`npm start` serves `dist/` via the zero-dependency `server.mjs` (keep it that way; the
-planned online-lobby WebSocket backend will attach to the same HTTP server).
-Live at https://beastbattler.adamroch.com (fallback domain:
+`npm start` runs `server.mjs`, which serves `dist/` AND the online-lobby WebSocket
+endpoint (`/ws`, see PRD §14) on the same port. Rooms are in-memory: a deploy drops
+active online matches. Live at https://beastbattler.adamroch.com (fallback domain:
 `beast-battler-production.up.railway.app`). DNS is in Cloudflare.
+
+# Git workflow
+
+Repo: https://github.com/AdamRoch/BeastBattler (`main`). Agents implement tickets in
+git worktrees under `.worktrees/` on `card-N` branches (each needs `npm ci`); the
+orchestrator verifies tests/build in the worktree, merges to `main`, pushes, then
+deletes the worktree+branch. Never let parallel agents share files without an agreed
+seam; `src/rules/` is off-limits unless a ticket says otherwise.
