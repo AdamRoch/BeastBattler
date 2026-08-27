@@ -2,6 +2,7 @@ import type {
   BaseMonsterCard,
   Element,
   FusionMonsterCard,
+  MonsterPermanent,
   PendingFusionSummon,
 } from "../rules/core";
 
@@ -25,8 +26,13 @@ export interface FusionRevealData {
   readonly result: FusionMonsterCard;
 }
 
+export interface UpgradeRevealData {
+  readonly result: FusionMonsterCard;
+}
+
 export interface FusionRevealOverlay {
   show(data: FusionRevealData): void;
+  showUpgrade(data: UpgradeRevealData): void;
   dismiss(): void;
   dispose(): void;
 }
@@ -50,6 +56,34 @@ export function fusionRevealFromEvent(
     ],
     result: event.card,
   };
+}
+
+/**
+ * Finds the fusion permanents that changed from level 2 to level 3. Matching
+ * by permanent ID makes this safe when two monsters share a name.
+ */
+export function upgradeRevealsFromTransition(
+  before: readonly MonsterPermanent[],
+  after: readonly MonsterPermanent[],
+): readonly UpgradeRevealData[] {
+  const priorFusions = new Map(
+    before
+      .filter((monster) => monster.card.category === "fusion-monster")
+      .map((monster) => [monster.card.instanceId, monster.card]),
+  );
+  const reveals: UpgradeRevealData[] = [];
+
+  for (const monster of after) {
+    if (monster.card.category !== "fusion-monster" || monster.card.level !== 3) {
+      continue;
+    }
+    const previous = priorFusions.get(monster.card.instanceId);
+    if (previous?.level === 2) {
+      reveals.push({ result: monster.card });
+    }
+  }
+
+  return reveals;
 }
 
 export function createFusionRevealOverlay(
@@ -94,19 +128,26 @@ export function createFusionRevealOverlay(
   overlay.addEventListener("click", handleClick);
   document.addEventListener("keydown", handleKeydown);
 
+  function showMarkup(markup: string): void {
+    if (disposed) {
+      return;
+    }
+    window.clearTimeout(dismissTimer);
+    overlay.innerHTML = markup;
+    overlay.hidden = false;
+    overlay.style.display = "grid";
+    overlay.classList.remove("is-revealing");
+    void overlay.offsetWidth;
+    overlay.classList.add("is-revealing");
+    dismissTimer = window.setTimeout(dismiss, FUSION_REVEAL_DURATION_MS);
+  }
+
   return {
     show(data) {
-      if (disposed) {
-        return;
-      }
-      window.clearTimeout(dismissTimer);
-      overlay.innerHTML = fusionRevealMarkup(data, portraitFor(data.result));
-      overlay.hidden = false;
-      overlay.style.display = "grid";
-      overlay.classList.remove("is-revealing");
-      void overlay.offsetWidth;
-      overlay.classList.add("is-revealing");
-      dismissTimer = window.setTimeout(dismiss, FUSION_REVEAL_DURATION_MS);
+      showMarkup(fusionRevealMarkup(data, portraitFor(data.result)));
+    },
+    showUpgrade(data) {
+      showMarkup(upgradeRevealMarkup(data, portraitFor(data.result)));
     },
     dismiss,
     dispose() {
@@ -135,6 +176,25 @@ function fusionRevealMarkup(data: FusionRevealData, portrait: string): string {
       <figure class="fusion-reveal-portrait">
         <img src="${portrait}" alt="${escapeHtml(result.name)} card art" />
         <figcaption>${escapeHtml(result.name)} <span>${result.attack} ATK · ${result.health} HP</span></figcaption>
+      </figure>
+      <small class="fusion-reveal-dismiss">Click anywhere or press Enter</small>
+    </section>
+  `;
+}
+
+function upgradeRevealMarkup(data: UpgradeRevealData, portrait: string): string {
+  const result = data.result;
+  return `
+    <section class="fusion-reveal-card fusion-reveal-card-upgrade" role="status">
+      <span class="fusion-reveal-eyebrow">LEVEL 3 UPGRADE</span>
+      <h2>Level 3 Beast Created!</h2>
+      <figure class="fusion-reveal-portrait">
+        <img src="${portrait}" alt="${escapeHtml(result.name)} card art" />
+        <figcaption>
+          <strong>${escapeHtml(result.name)}</strong>
+          <span class="fusion-reveal-stars">★★★</span>
+          <span>${result.attack} ATK · ${result.health} HP</span>
+        </figcaption>
       </figure>
       <small class="fusion-reveal-dismiss">Click anywhere or press Enter</small>
     </section>

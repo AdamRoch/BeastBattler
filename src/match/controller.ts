@@ -63,6 +63,7 @@ import {
 import {
   createFusionRevealOverlay,
   fusionRevealFromEvent,
+  upgradeRevealsFromTransition,
   type FusionRevealData,
 } from "./fusion-reveal";
 import { boardZoneMarkup } from "./board-zone";
@@ -1043,6 +1044,7 @@ export function mountMatch(
       } else {
         syncScene(before, state);
       }
+      showUpgradeReveals(before, state);
     }
     if (update.notice) {
       notice = update.notice;
@@ -1124,6 +1126,7 @@ export function mountMatch(
     }
     animateAiImmediateActions(before, result.actions);
     syncScene(before, state);
+    showUpgradeReveals(before, state);
 
     if (result.attackDeclaration) {
       pendingAttack = result.attackDeclaration;
@@ -1213,6 +1216,19 @@ export function mountMatch(
       });
     }
     scheduleSceneCleanup(() => removeRetained(baseMonsterId), 1450);
+  }
+
+  function showUpgradeReveals(before: MatchState, after: MatchState): void {
+    for (const playerId of [HUMAN, AI]) {
+      const reveals = upgradeRevealsFromTransition(
+        getPlayer(before, playerId).monsters,
+        getPlayer(after, playerId).monsters,
+      );
+      for (const reveal of reveals) {
+        fusionReveal.showUpgrade(reveal);
+        options.sfx?.announceSummon(reveal.result.name, "fusion");
+      }
+    }
   }
 
   function animateStackResolution(
@@ -1845,6 +1861,7 @@ export function mountMatch(
           state = upgradeFusion(state, localPlayerId(), fusionId, baseId);
           animateUpgrade(before, fusionId, baseId);
           syncScene(before, state);
+          showUpgradeReveals(before, state);
           notice = "Fusion upgraded to ★3.";
           render();
         } catch (error) {
