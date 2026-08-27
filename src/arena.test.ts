@@ -41,6 +41,32 @@ describe("createArenaScene", () => {
     expect(arena.getMonsterAt({ side: "player", slot: 0 })).toBe(result);
   });
 
+  it.each([
+    ["player", Math.PI],
+    ["opponent", 0],
+  ] as const)(
+    "settles a staged fusion on the %s side's canonical facing",
+    (side, expectedYaw) => {
+      const arena = createArenaScene(16 / 9);
+      arena.placeMonster("Ember Imp", { side, slot: 0 });
+      arena.placeMonster("Cinder Wall", { side, slot: 1 });
+      const result = arena.stageFusion(
+        ["Ember Imp", "Cinder Wall"],
+        "Inferno Beast",
+      );
+
+      arena.update(0);
+      arena.dispatchAnimation({
+        type: "fusion",
+        sourceIds: ["Ember Imp", "Cinder Wall"],
+        resultId: "Inferno Beast",
+      });
+      arena.update(2.5);
+
+      expect(result.rotation.y).toBeCloseTo(expectedYaw);
+    },
+  );
+
   it("publishes animation events to read-only integrations", () => {
     const arena = createArenaScene(16 / 9);
     arena.placeMonster("Ember Imp", { side: "player", slot: 0 });

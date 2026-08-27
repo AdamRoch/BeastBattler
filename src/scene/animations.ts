@@ -90,6 +90,26 @@ function easeOutCubic(value: number): number {
   return 1 - (1 - value) ** 3;
 }
 
+function cameraFacingYaw(
+  monster: THREE.Object3D,
+  camera: THREE.PerspectiveCamera,
+): number {
+  const monsterPosition = monster.getWorldPosition(new THREE.Vector3());
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+  return Math.atan2(
+    monsterPosition.x - cameraPosition.x,
+    monsterPosition.z - cameraPosition.z,
+  );
+}
+
+function showcaseYawDelta(from: number, to: number): number {
+  const shortest = THREE.MathUtils.euclideanModulo(to - from + Math.PI, TAU)
+    - Math.PI;
+  return shortest === 0
+    ? TAU
+    : shortest - Math.sign(shortest) * TAU;
+}
+
 function basicGlowMaterial(
   color: THREE.ColorRepresentation,
   opacity = 1,
@@ -441,6 +461,12 @@ export function createArenaAnimationSystem(
     ];
     const center = result.position.clone();
     const resultScale = result.scale.clone();
+    const resultRotation = result.rotation.clone();
+    const resultShowcaseYaw = cameraFacingYaw(result, context.camera);
+    const resultRotationDelta = showcaseYawDelta(
+      resultShowcaseYaw,
+      resultRotation.y,
+    );
     const flash = createFlash(
       result.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.8, 0)),
     );
@@ -448,6 +474,7 @@ export function createArenaAnimationSystem(
 
     result.visible = true;
     result.scale.copy(resultScale).multiplyScalar(1.55);
+    result.rotation.y = resultShowcaseYaw;
     setHologramAnimationState(result, { reveal: 0 });
     for (const source of sources) {
       source.visible = true;
@@ -489,9 +516,12 @@ export function createArenaAnimationSystem(
         flash.scale.setScalar(0.2 + flashEnvelope * 4.2);
 
         const reveal = smoothstep(0.6, 0.96, progress);
+        const showcaseRotation = smoothstep(0.48, 1, progress);
         result.scale
           .copy(resultScale)
           .multiplyScalar(THREE.MathUtils.lerp(1.55, 1.35, reveal));
+        result.rotation.y =
+          resultShowcaseYaw + resultRotationDelta * showcaseRotation;
         setHologramAnimationState(result, {
           flash: flashEnvelope * 0.8,
           reveal,
@@ -504,6 +534,7 @@ export function createArenaAnimationSystem(
           resetHologramAnimationState(source);
         });
         result.scale.copy(resultScale).multiplyScalar(1.35);
+        result.rotation.copy(resultRotation);
         resetHologramAnimationState(result);
         disposeEffect(flash);
       },
