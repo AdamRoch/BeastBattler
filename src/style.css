@@ -1918,3 +1918,100 @@ canvas {
   .upgrade-prompt { right: 16px; }
   .upgrade-monster img { height: 56px; }
 }
+
+/* CARD-48: result copy and winner title swap. */
+.result-winner-message,
+.result-screen .result-winner-message {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.result-game-gag,
+.result-screen .result-game-gag,
+.decision-panel .result-game-gag {
+  margin: 0;
+  color: #d5f8ff;
+  font-size: clamp(16px, 2.2vw, 22px);
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.result-game-title {
+  display: inline-grid;
+  vertical-align: baseline;
+}
+
+.result-game-title-original,
+.result-game-title-replacement {
+  grid-area: 1 / 1;
+}
+
+.result-game-title-original {
+  position: relative;
+  color: #f5d0dc;
+  animation: result-game-title-exit 1ms linear 1.3s forwards;
+}
+
+.result-game-title-original::after {
+  position: absolute;
+  top: 52%;
+  right: -0.08em;
+  left: -0.08em;
+  height: 0.13em;
+  background: #ff597d;
+  box-shadow: 0 0 9px rgba(255, 89, 125, 0.88);
+  content: "";
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: result-game-title-strike 800ms ease-out 120ms forwards;
+}
+
+.result-game-title-replacement {
+  color: #8ceaff;
+  font-weight: 900;
+  opacity: 0;
+  transform: scale(0.94);
+  animation: result-game-title-reveal 180ms ease-out 1.3s forwards;
+}
+
+.result-message,
+.result-screen .result-message,
+.decision-panel .result-message {
+  max-width: 470px;
+  margin: 0;
+  color: #a9d2de;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.result-screen .result-reason {
+  margin: 10px 0 28px;
+}
+
+.result-panel .result-message:last-of-type {
+  margin-bottom: 12px;
+}
+
+@keyframes result-game-title-strike {
+  to { transform: scaleX(1); }
+}
+
+@keyframes result-game-title-exit {
+  to { visibility: hidden; }
+}
+
+@keyframes result-game-title-reveal {
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result-game-title-original,
+  .result-game-title-original::after,
+  .result-game-title-replacement {
+    animation: none;
+  }
+
+  .result-game-title-original { visibility: hidden; }
+  .result-game-title-replacement { opacity: 1; transform: none; }
+}

@@ -93,6 +93,10 @@ import {
   phaseAdvanceButton,
   responsePassButton,
 } from "./phase-advance-shortcut";
+import {
+  resultMessageFor,
+  resultMessageMarkup,
+} from "./result-message";
 import type { SfxEngine } from "../sfx";
 
 const HUMAN: PlayerId = "player-1";
@@ -829,15 +833,20 @@ export function mountMatch(
   }
 
   function resultPrompt(current: MatchState): string {
-    const won = current.result?.winner === localPlayerId();
+    const winner = current.result?.winner;
+    if (!winner) {
+      return "";
+    }
+    const message = resultMessageFor(winner, localPlayerId());
     const heading = mode === "hotseat"
-      ? `Player ${current.result?.winner === HUMAN ? 1 : 2} wins`
-      : won ? "Victory" : "Defeat";
+      ? `Player ${winner === HUMAN ? 1 : 2} wins`
+      : message.outcome === "win" ? "Victory" : "Defeat";
     return `
       <div class="decision-backdrop">
         <section class="decision-panel result-panel" data-testid="result-prompt">
           <span class="eyebrow">MATCH COMPLETE</span>
           <h1>${heading}</h1>
+          ${resultMessageMarkup(message)}
           <p>${current.result?.reason === "deck-out" ? "A battler ran out of cards." : "A life counter reached zero."}</p>
           <button class="primary-action" data-action="rematch">REMATCH</button>
           ${mode === "online" ? '<button class="quiet-action" data-action="leave-match">LEAVE MATCH</button>' : ""}
