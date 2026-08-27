@@ -10,6 +10,10 @@ import {
   type OnlineLobbyController,
   type OnlineMatchSession,
 } from "../lobby/online-lobby";
+import {
+  resultMessageFor,
+  resultMessageMarkup,
+} from "../match/result-message";
 import type { MatchResult } from "../rules/core";
 import type { SfxEngine } from "../sfx";
 import {
@@ -338,6 +342,7 @@ function resultScreen(state: AppState): string {
   const heading = state.mode === "ai"
     ? playerOneWon ? "VICTORY" : "DEFEAT"
     : `PLAYER ${playerOneWon ? 1 : 2} WINS`;
+  const message = resultMessageFor(state.result.winner, "player-1");
   const reason = state.result.reason === "deck-out"
     ? "The opposing deck ran dry."
     : "The opposing life counter reached zero.";
@@ -345,7 +350,8 @@ function resultScreen(state: AppState): string {
     <main class="flow-screen result-screen" data-testid="result-screen">
       <span class="screen-kicker">MATCH COMPLETE</span>
       <h1>${heading}</h1>
-      <p>${reason}</p>
+      ${resultMessageMarkup(message)}
+      <p class="result-reason">${reason}</p>
       <div class="result-actions">
         <button class="flow-primary" data-screen-action="rematch">REMATCH</button>
         <button class="flow-secondary" data-screen-action="menu">MAIN MENU</button>
