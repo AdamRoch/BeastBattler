@@ -60,6 +60,11 @@ import {
   type QueuedDraw,
 } from "./draw-animation";
 import { boardZoneMarkup } from "./board-zone";
+import {
+  applyCoachMarkTargets,
+  coachMarkMarkup,
+  createCoachMarkTracker,
+} from "./coach-marks";
 import { createSummonTipTracker } from "./summon-tip";
 import {
   isRecommendedTarget,
@@ -86,6 +91,7 @@ const EMPTY_COMBAT_DELAY_MS = 800;
 const SUMMON_TIP_DURATION_MS = 2_000;
 const DRAW_ANIMATION_DURATION_MS = 400;
 const DRAW_HIGHLIGHT_DURATION_MS = 1_000;
+const COACH_MARK_DURATION_MS = 4_000;
 
 interface PendingTarget {
   readonly cardId: string;
@@ -185,6 +191,7 @@ export function mountMatch(
   let activeDraw: QueuedDraw | null = null;
   let activeDrawAnimation: Animation | null = null;
   let drawAnimationToken = 0;
+  let coachMarkTimer: number | undefined;
   let audioPhase = `${state.turnNumber}:${state.phase}`;
   const audibleLife: Record<PlayerId, number> = {
     "player-1": getPlayer(state, HUMAN).life,
@@ -195,6 +202,7 @@ export function mountMatch(
   const retainedSceneIds = new Set<string>();
   const pendingFusionSources = new Map<string, readonly [string, string]>();
   const summonTip = createSummonTipTracker();
+  const coachMarks = createCoachMarkTracker();
   let unsubscribeOnline = () => {};
 
   arena.setSideElement("player", primaryElement(playerOneArchetype));
@@ -254,6 +262,13 @@ export function mountMatch(
     const fusionOptions = availableFusions(localId);
     const upgradeOptions = availableUpgrades(localId);
     const initialExtraDeck = initialExtraDecks[localId];
+    const previousCoachMark = coachMarks.current();
+    const coachMark = mode !== "online" && !handIsPrivate
+      ? coachMarks.update(state, localId)
+      : null;
+    if (coachMark && coachMark !== previousCoachMark) {
+      showCoachMark();
+    }
     const priorityPlayer = state.responsePlayer ?? state.activePlayer;
     const fusionKey = fusionOptions
       .map((option) => option.parentIds.join("+"))
@@ -328,8 +343,10 @@ export function mountMatch(
       ${!handIsPrivate && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
       ${!handIsPrivate && state.result && !options.onComplete ? resultPrompt(state) : ""}
       ${summonTipVisible ? '<aside class="summon-tip" data-testid="summon-tip" role="status">Lv1 creatures can\'t attack on their first turn.</aside>' : ""}
+      ${coachMark ? coachMarkMarkup(coachMark) : ""}
       ${privacyCurtainMarkup(privacyCurtain)}
     `;
+    applyCoachMarkTargets(hud, coachMark);
 
     startNextDrawAnimation();
 
@@ -825,6 +842,7 @@ export function mountMatch(
     if (!card) {
       return;
     }
+    dismissCoachMarkForCard(cardId);
     if (online) {
       if (card.kind === "land") {
         sendOnlineIntent({ kind: "play-land", cardId }, `${card.name} sent to the server.`);
@@ -1226,6 +1244,25 @@ export function mountMatch(
         render();
       }
     }, SUMMON_TIP_DURATION_MS);
+  }
+
+  function showCoachMark(): void {
+    window.clearTimeout(coachMarkTimer);
+    coachMarkTimer = window.setTimeout(() => {
+      coachMarkTimer = undefined;
+      coachMarks.dismiss();
+      if (!disposed) {
+        render();
+      }
+    }, COACH_MARK_DURATION_MS);
+  }
+
+  function dismissCoachMarkForCard(cardId: string): void {
+    if (!coachMarks.dismissForCard(cardId)) {
+      return;
+    }
+    window.clearTimeout(coachMarkTimer);
+    coachMarkTimer = undefined;
   }
 
   function retireMonster(monsterId: string, animateDeath: boolean): void {
@@ -1742,6 +1779,9 @@ export function mountMatch(
         summonTip.reset();
         summonTipVisible = false;
         window.clearTimeout(summonTipTimer);
+        coachMarks.reset();
+        window.clearTimeout(coachMarkTimer);
+        coachMarkTimer = undefined;
         state = newMatch();
         completionReported = false;
         resultSfxPlayed = false;
@@ -1793,6 +1833,7 @@ export function mountMatch(
       window.clearTimeout(aiTimer);
       window.clearTimeout(emptyCombatTimer);
       window.clearTimeout(summonTipTimer);
+      window.clearTimeout(coachMarkTimer);
       clearAnimationTimers();
       interruptDrawAnimations();
       for (const id of [...sceneIds]) {

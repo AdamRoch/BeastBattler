@@ -1389,3 +1389,85 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .targeting-prompt .target-option.is-recommended-target { animation: none; }
 }
+
+/* CARD-37 tutorial coach marks. Existing hand card markup remains unchanged. */
+.coach-mark {
+  position: absolute;
+  bottom: 274px;
+  left: 50%;
+  z-index: 6;
+  display: grid;
+  width: max-content;
+  max-width: min(88vw, 430px);
+  gap: 3px;
+  padding: 10px 15px;
+  border: 1px solid rgba(126, 227, 255, 0.52);
+  border-radius: 10px;
+  background: rgba(5, 16, 28, 0.93);
+  box-shadow: 0 0 26px rgba(52, 202, 255, 0.2);
+  color: #d4f7ff;
+  pointer-events: none;
+  text-align: center;
+  transform: translateX(-50%);
+  animation: coach-mark-enter 180ms ease-out;
+}
+
+.coach-mark-label {
+  color: #73e5ff;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+}
+
+.coach-mark strong {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.coach-mark-signal {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(126, 227, 255, 0.52);
+  border-radius: 50%;
+  background: rgba(5, 16, 28, 0.93);
+  color: #d4f7ff;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1;
+  transform: translateX(-50%);
+}
+
+.hand-card.is-coach-mark-target {
+  z-index: 21;
+  border-color: #8ce8ff;
+  box-shadow: 0 0 0 2px rgba(118, 228, 255, 0.22), 0 0 22px rgba(62, 211, 255, 0.56), 0 14px 30px rgba(0, 0, 0, 0.55);
+  filter: brightness(1.13) saturate(1.15);
+}
+
+.hand-card.is-coach-mark-target::after {
+  position: absolute;
+  top: -31px;
+  left: 50%;
+  color: #8ce8ff;
+  content: "↓";
+  font-size: 26px;
+  line-height: 1;
+  text-shadow: 0 0 10px rgba(73, 215, 255, 0.9);
+  transform: translateX(-50%);
+  animation: coach-mark-arrow 900ms ease-in-out infinite;
+}
+
+@keyframes coach-mark-enter {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
+@keyframes coach-mark-arrow {
+  50% { transform: translate(-50%, 5px); }
+}
