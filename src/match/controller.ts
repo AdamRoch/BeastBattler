@@ -14,6 +14,7 @@ import {
 import { createMonsterModel, type AssignedMonsterId } from "../models";
 import {
   advancePhase,
+  type BaseMonsterCard,
   createMatch,
   discardToHandLimit,
   getPlayer,
@@ -104,11 +105,31 @@ interface PendingTarget {
   readonly spellId: "bolt" | "destroy";
 }
 
-interface FusionUpgradeOption {
+export interface FusionUpgradeOption {
   readonly fusionId: string;
   readonly fusionName: string;
+  readonly fusionPortraitId: CardArtId;
   readonly baseMonsterId: string;
   readonly baseMonsterName: string;
+  readonly baseMonsterPortraitId: CardArtId;
+}
+
+/**
+ * Keeps the upgrade prompt tied to the same permanent IDs that the rules and
+ * board animation use. The prompt must never infer a different pair by name.
+ */
+export function createFusionUpgradeOption(
+  fusion: FusionMonsterCard,
+  baseMonster: BaseMonsterCard,
+): FusionUpgradeOption {
+  return {
+    fusionId: fusion.instanceId,
+    fusionName: fusion.name,
+    fusionPortraitId: fusion.name as CardArtId,
+    baseMonsterId: baseMonster.instanceId,
+    baseMonsterName: baseMonster.name,
+    baseMonsterPortraitId: baseMonster.name as CardArtId,
+  };
 }
 
 export interface MatchController {
@@ -645,11 +666,41 @@ export function mountMatch(
   function upgradePrompt(options: readonly FusionUpgradeOption[]): string {
     return `
       <section class="floating-prompt upgrade-prompt" data-testid="upgrade-prompt">
-        <span class="eyebrow">POWER AVAILABLE</span>
-        <h2>Upgrade to ★3?</h2>
+        <span class="eyebrow">FUSION UPGRADE</span>
+        <h2>Choose a ★3 upgrade</h2>
         <div class="prompt-options">
           ${options
-            .map((option) => `<button data-action="upgrade" data-fusion-id="${option.fusionId}" data-base-id="${option.baseMonsterId}"><strong>${option.fusionName} ★3</strong><small>Absorb ${option.baseMonsterName}</small></button>`)
+            .map((option) => `
+              <button
+                class="upgrade-option"
+                data-action="upgrade"
+                data-fusion-id="${option.fusionId}"
+                data-base-id="${option.baseMonsterId}"
+                aria-label="Consume ${option.baseMonsterName} to upgrade ${option.fusionName} to level 3"
+              >
+                <span class="upgrade-route">
+                  <figure class="upgrade-monster upgrade-monster-consumed">
+                    <img src="${art.render(option.baseMonsterPortraitId)}" alt="${option.baseMonsterName} portrait" />
+                    <figcaption>
+                      <span>CONSUMED</span>
+                      <strong>${option.baseMonsterName}</strong>
+                    </figcaption>
+                  </figure>
+                  <span class="upgrade-merge" aria-hidden="true">
+                    <span>+</span>
+                    <span>→</span>
+                  </span>
+                  <figure class="upgrade-monster upgrade-monster-result">
+                    <img src="${art.render(option.fusionPortraitId)}" alt="${option.fusionName} portrait" />
+                    <figcaption>
+                      <span class="upgrade-stars">★★★</span>
+                      <strong>${option.fusionName}</strong>
+                    </figcaption>
+                  </figure>
+                </span>
+                <span class="upgrade-effect"><strong>${option.baseMonsterName} is consumed.</strong> ${option.fusionName} becomes ★3: +1 ATK and +1 max HP, keeps all damage/HP.</span>
+              </button>
+            `)
             .join("")}
         </div>
       </section>
@@ -836,12 +887,7 @@ export function mountMatch(
           baseCard.category === "base-monster" &&
           fusionCard.elements.includes(baseCard.element)
         ) {
-          options.push({
-            fusionId: fusionCard.instanceId,
-            fusionName: fusionCard.name,
-            baseMonsterId: baseCard.instanceId,
-            baseMonsterName: baseCard.name,
-          });
+          options.push(createFusionUpgradeOption(fusionCard, baseCard));
         }
       }
     }

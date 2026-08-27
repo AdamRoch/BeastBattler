@@ -6,7 +6,7 @@ import {
   type BaseMonsterCard,
 } from "../cards/catalog";
 import type { PendingStackItem } from "../rules/core";
-import { responseWindowMessage } from "./controller";
+import { createFusionUpgradeOption, responseWindowMessage } from "./controller";
 
 describe("response window messages", () => {
   it("attributes spells, summons, and fusions to the opponent", () => {
@@ -28,6 +28,32 @@ describe("response window messages", () => {
     expect(responseWindowMessage(pendingSpell("player-1"), "hotseat")).toBe(
       "Player 1 has cast Bolt.",
     );
+  });
+});
+
+describe("fusion upgrade prompt options", () => {
+  it("keeps the consumed base and upgraded fusion identities separate", () => {
+    const baseMonster = assembleDeck("fire-water").find(
+      (candidate): candidate is BaseMonsterCard =>
+        candidate.kind === "monster" &&
+        candidate.category === "base-monster" &&
+        candidate.name === "Ember Imp",
+    );
+    const fusion = deriveExtraDeck("fire-water").find(
+      (candidate) => candidate.name === "Steam Beast",
+    );
+    if (!baseMonster || !fusion) {
+      throw new Error("Missing fusion upgrade fixtures");
+    }
+
+    expect(createFusionUpgradeOption(fusion, baseMonster)).toEqual({
+      fusionId: fusion.instanceId,
+      fusionName: "Steam Beast",
+      fusionPortraitId: "Steam Beast",
+      baseMonsterId: baseMonster.instanceId,
+      baseMonsterName: "Ember Imp",
+      baseMonsterPortraitId: "Ember Imp",
+    });
   });
 });
 
