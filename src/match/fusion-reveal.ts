@@ -59,6 +59,10 @@ export function createFusionRevealOverlay(
   const overlay = document.createElement("aside");
   overlay.className = "fusion-reveal-overlay";
   overlay.hidden = true;
+  // The stylesheet gives this overlay `display: grid`, which would otherwise
+  // defeat the `hidden` attribute and leave a full-screen overlay capturing
+  // every click. Keep the inline display in lockstep with visibility.
+  overlay.style.display = "none";
   overlay.setAttribute("aria-atomic", "true");
   overlay.setAttribute("aria-live", "assertive");
   overlay.setAttribute("data-testid", "fusion-reveal");
@@ -71,6 +75,7 @@ export function createFusionRevealOverlay(
     window.clearTimeout(dismissTimer);
     dismissTimer = undefined;
     overlay.hidden = true;
+    overlay.style.display = "none";
     overlay.replaceChildren();
   }
 
@@ -97,6 +102,7 @@ export function createFusionRevealOverlay(
       window.clearTimeout(dismissTimer);
       overlay.innerHTML = fusionRevealMarkup(data, portraitFor(data.result));
       overlay.hidden = false;
+      overlay.style.display = "grid";
       overlay.classList.remove("is-revealing");
       void overlay.offsetWidth;
       overlay.classList.add("is-revealing");

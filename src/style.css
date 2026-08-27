@@ -1488,6 +1488,11 @@ canvas {
   cursor: pointer;
 }
 
+/* The display rule above would otherwise defeat the hidden attribute. */
+.fusion-reveal-overlay[hidden] {
+  display: none;
+}
+
 .fusion-reveal-overlay::before,
 .fusion-reveal-overlay::after {
   position: absolute;
