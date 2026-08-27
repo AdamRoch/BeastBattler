@@ -1471,3 +1471,184 @@ canvas {
 @keyframes coach-mark-arrow {
   50% { transform: translate(-50%, 5px); }
 }
+
+/* CARD-40: fusion reveal setpiece */
+.fusion-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(116, 231, 255, 0.18), transparent 31%),
+    rgba(2, 5, 11, 0.8);
+  backdrop-filter: blur(7px);
+  cursor: pointer;
+}
+
+.fusion-reveal-overlay::before,
+.fusion-reveal-overlay::after {
+  position: absolute;
+  width: min(92vw, 880px);
+  height: min(92vw, 880px);
+  border: 1px solid rgba(134, 235, 255, 0.24);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+
+.fusion-reveal-overlay::after {
+  width: min(68vw, 620px);
+  height: min(68vw, 620px);
+  border-color: rgba(187, 242, 255, 0.46);
+}
+
+.fusion-reveal-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(330px, calc(100vw - 48px));
+  justify-items: center;
+  padding: 19px 22px 16px;
+  border: 1px solid rgba(161, 238, 255, 0.8);
+  border-radius: 10px 10px 26px 26px;
+  background:
+    linear-gradient(150deg, rgba(47, 115, 145, 0.42), rgba(5, 12, 24, 0.96) 47%, rgba(64, 41, 113, 0.4)),
+    #07101c;
+  box-shadow: 0 0 0 1px rgba(198, 249, 255, 0.18), 0 0 48px rgba(88, 220, 255, 0.58), 0 34px 86px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  text-align: center;
+}
+
+.fusion-reveal-card::before {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(211, 250, 255, 0.1) 0 1px, transparent 1px 5px);
+  content: "";
+  mix-blend-mode: screen;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.fusion-reveal-eyebrow,
+.fusion-reveal-card h2,
+.fusion-reveal-ritual,
+.fusion-reveal-portrait,
+.fusion-reveal-dismiss { position: relative; z-index: 1; }
+
+.fusion-reveal-eyebrow {
+  color: #a6edff;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.25em;
+}
+
+.fusion-reveal-card h2 {
+  margin: 8px 0 12px;
+  color: #effcff;
+  font-family: "Arial Narrow", Impact, sans-serif;
+  font-size: clamp(23px, 5vw, 32px);
+  line-height: 0.98;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(132, 235, 255, 0.52);
+}
+
+.fusion-reveal-ritual {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fusion-reveal-element {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: rgba(5, 15, 25, 0.76);
+  box-shadow: 0 0 16px currentColor, inset 0 0 12px currentColor;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.fusion-reveal-element b { font-weight: 900; }
+
+.fusion-reveal-plus,
+.fusion-reveal-arrow {
+  color: #d7f8ff;
+  font-size: 23px;
+  font-weight: 300;
+  text-shadow: 0 0 12px rgba(127, 230, 255, 0.75);
+}
+
+.fusion-reveal-arrow { margin-left: 2px; }
+
+.fusion-reveal-portrait {
+  width: min(154px, 48vw);
+  margin: 0;
+  border: 1px solid rgba(185, 245, 255, 0.62);
+  border-radius: 8px;
+  background: #050b14;
+  box-shadow: 0 0 26px rgba(133, 230, 255, 0.45);
+  overflow: hidden;
+}
+
+.fusion-reveal-portrait img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 0.714;
+  object-fit: cover;
+}
+
+.fusion-reveal-portrait figcaption {
+  display: grid;
+  gap: 2px;
+  padding: 6px 7px 7px;
+  color: #eafcff;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.fusion-reveal-portrait figcaption span {
+  color: #89dff4;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+}
+
+.fusion-reveal-dismiss {
+  margin-top: 10px;
+  color: #8caebc;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fusion-reveal-overlay.is-revealing .fusion-reveal-card { animation: fusion-reveal-card-in 500ms cubic-bezier(0.12, 0.78, 0.22, 1) both; }
+.fusion-reveal-overlay.is-revealing::before { animation: fusion-reveal-ring 2.5s ease-out both; }
+.fusion-reveal-overlay.is-revealing::after { animation: fusion-reveal-ring 2.5s ease-out 100ms both; }
+
+@keyframes fusion-reveal-card-in {
+  0% { opacity: 0; transform: scale(0.42) rotateX(24deg); filter: brightness(2.5); }
+  42% { opacity: 1; transform: scale(1.05) rotateX(0); filter: brightness(1.35); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+@keyframes fusion-reveal-ring {
+  0% { opacity: 0; transform: scale(0.18) rotate(0deg); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.08) rotate(150deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fusion-reveal-overlay.is-revealing .fusion-reveal-card,
+  .fusion-reveal-overlay.is-revealing::before,
+  .fusion-reveal-overlay.is-revealing::after { animation: none; }
+}
