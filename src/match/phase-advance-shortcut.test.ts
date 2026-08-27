@@ -43,6 +43,14 @@ describe("phase advance Enter shortcut", () => {
     expect(phaseAdvanceButton("TO COMBAT")).toContain('class="key-hint" aria-hidden="true">⏎');
   });
 
+  it("uses the same shortcut button for ATTACK ALL", () => {
+    const button = phaseAdvanceButton("ATTACK ALL", "attack");
+
+    expect(button).toContain('data-action="attack"');
+    expect(button).toContain('data-phase-advance');
+    expect(button).toContain('class="key-hint" aria-hidden="true">⏎');
+  });
+
   it("clicks the rendered phase advance button", () => {
     const keys = new FakeKeyTarget();
     let clicks = 0;

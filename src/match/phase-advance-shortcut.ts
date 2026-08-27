@@ -18,8 +18,10 @@ interface KeyboardEventTarget {
   removeEventListener(type: "keydown", listener: (event: KeyboardEvent) => void): void;
 }
 
-export function phaseAdvanceButton(label: string): string {
-  return `<button class="primary-action phase-advance-action" data-action="advance" data-phase-advance>${label}<span class="key-hint" aria-hidden="true">⏎</span><span class="sr-only"> Press Enter</span></button>`;
+type ShortcutAction = "advance" | "attack";
+
+export function phaseAdvanceButton(label: string, action: ShortcutAction = "advance"): string {
+  return `<button class="primary-action phase-advance-action" data-action="${action}" data-phase-advance>${label}<span class="key-hint" aria-hidden="true">⏎</span><span class="sr-only"> Press Enter</span></button>`;
 }
 
 export function phaseAdvanceShortcutBlocked(state: PhaseAdvanceShortcutState): boolean {

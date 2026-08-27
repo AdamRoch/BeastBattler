@@ -578,8 +578,14 @@ export function mountMatch(
         if (!hasReadyAttackers(state, player.id)) {
           return "";
         }
+        if (selectedAttackers.size === 0) {
+          return `
+            ${phaseAdvanceButton("ATTACK ALL", "attack")}
+            <button class="quiet-action" data-action="hold">HOLD</button>
+          `;
+        }
         return `
-          <button class="primary-action" data-action="attack">ATTACK${selectedAttackers.size ? ` (${selectedAttackers.size})` : " ALL"}</button>
+          <button class="primary-action" data-action="attack">ATTACK (${selectedAttackers.size})</button>
           <button class="quiet-action" data-action="hold">HOLD</button>
         `;
       case "end": {
