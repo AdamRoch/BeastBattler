@@ -1734,3 +1734,75 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .targeting-prompt .target-option.is-lethal-target.is-recommended-target { animation: none; }
 }
+
+/* CARD-45 monster hover tooltip. */
+.monster-tooltip {
+  position: fixed;
+  z-index: 24;
+  width: min(248px, calc(100vw - 24px));
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(128, 231, 255, 0.72);
+  border-radius: 4px 12px 12px 4px;
+  background:
+    linear-gradient(125deg, rgba(44, 164, 206, 0.2), transparent 43%),
+    rgba(3, 11, 20, 0.96);
+  box-shadow: 0 0 0 1px rgba(114, 219, 255, 0.12) inset, 0 12px 30px rgba(0, 0, 0, 0.48), 0 0 22px rgba(65, 211, 255, 0.17);
+  color: #dff8ff;
+  pointer-events: none;
+  user-select: none;
+}
+
+.monster-tooltip[hidden] { display: none; }
+
+.monster-tooltip-level,
+.monster-tooltip-element,
+.monster-tooltip-status,
+.monster-tooltip-rule,
+.monster-tooltip-stat-label {
+  margin: 0;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.monster-tooltip-level { color: #76dff7; }
+
+.monster-tooltip-name {
+  margin: 3px 0 9px;
+  color: #f1fdff;
+  font-size: 15px;
+  letter-spacing: 0.025em;
+}
+
+.monster-tooltip-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.monster-tooltip-stat {
+  display: grid;
+  gap: 1px;
+  padding: 5px 7px;
+  border: 1px solid rgba(131, 222, 247, 0.18);
+  background: rgba(88, 191, 225, 0.08);
+}
+
+.monster-tooltip-stat-label { color: #7796a8; font-size: 7px; }
+.monster-tooltip-stat-value { color: #e7fbff; font-size: 14px; }
+.monster-tooltip-element { color: #9edff0; }
+.monster-tooltip-status { margin-top: 5px; color: #82f0c0; }
+.monster-tooltip.is-summoning-sick .monster-tooltip-status { color: #ffcd8a; }
+
+.monster-tooltip-rule {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(129, 218, 245, 0.14);
+  color: #a9c5d1;
+  font-size: 7px;
+  letter-spacing: 0.065em;
+  line-height: 1.45;
+  text-transform: none;
+}

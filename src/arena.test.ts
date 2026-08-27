@@ -64,4 +64,20 @@ describe("createArenaScene", () => {
     arena.setMonsterSummoningSickness("Ember Imp", false);
     expect(monster.getObjectByName("summoning-sickness-indicator")).toBeUndefined();
   });
+
+  it("identifies a monster through its child mesh at a normalized screen point", () => {
+    const arena = createArenaScene(16 / 9);
+    const model = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    body.position.y = 0.5;
+    model.add(body);
+    arena.placeMonster("hovered-monster", { side: "player", slot: 1 }, model);
+
+    arena.scene.updateMatrixWorld(true);
+    arena.camera.updateMatrixWorld();
+    const point = body.getWorldPosition(new THREE.Vector3()).project(arena.camera);
+
+    expect(arena.pickMonsterAt(point.x, point.y)).toBe("hovered-monster");
+    expect(arena.pickMonsterAt(2, 2)).toBeNull();
+  });
 });
