@@ -3,6 +3,7 @@ import { getPlayer, type MatchState, type PlayerId } from "../rules/core";
 export type CoachMarkKind =
   | "land-monster-pairing"
   | "sorcery-timing"
+  | "play-a-beast"
   | "play-a-land";
 
 export interface CoachMark {
@@ -21,6 +22,7 @@ export interface CoachMarkTracker {
 
 export function createCoachMarkTracker(): CoachMarkTracker {
   const shown = new Set<CoachMarkKind>();
+  const playersWhoHaveSummonedBaseMonster = new Set<PlayerId>();
   let active: CoachMark | null = null;
   let mainPhaseKey = "";
   let playLandPending = false;
@@ -31,6 +33,13 @@ export function createCoachMarkTracker(): CoachMarkTracker {
     },
 
     update(state, localPlayerId) {
+      if (
+        getPlayer(state, localPlayerId).monsters.some(
+          (monster) => monster.card.category === "base-monster",
+        )
+      ) {
+        playersWhoHaveSummonedBaseMonster.add(localPlayerId);
+      }
       const key = `${state.turnNumber}:${state.activePlayer}:${state.phase}`;
       if (key !== mainPhaseKey) {
         mainPhaseKey = key;
@@ -49,6 +58,13 @@ export function createCoachMarkTracker(): CoachMarkTracker {
           : null) ??
         (!shown.has("sorcery-timing")
           ? findSorceryTimingTip(state, localPlayerId)
+          : null) ??
+        (!shown.has("play-a-beast")
+          ? findPlayBeastTip(
+            state,
+            localPlayerId,
+            playersWhoHaveSummonedBaseMonster.has(localPlayerId),
+          )
           : null) ??
         (!shown.has("play-a-land") && playLandPending
           ? findPlayLandTip(state, localPlayerId)
@@ -80,6 +96,7 @@ export function createCoachMarkTracker(): CoachMarkTracker {
 
     reset() {
       shown.clear();
+      playersWhoHaveSummonedBaseMonster.clear();
       active = null;
       mainPhaseKey = "";
       playLandPending = false;
@@ -104,13 +121,31 @@ export function applyCoachMarkTargets(
   root: ParentNode,
   mark: CoachMark | null,
 ): void {
+  root.querySelector("[data-coach-mark-pointer-layer]")?.remove();
   const targetIds = new Set(mark?.cardIds ?? []);
-  root.querySelectorAll<HTMLElement>(".hand-card[data-card-id]").forEach((card) => {
+  const targetCards = [...root.querySelectorAll<HTMLElement>(".hand-card[data-card-id]")];
+  targetCards.forEach((card) => {
     card.classList.toggle(
       "is-coach-mark-target",
       targetIds.has(card.dataset.cardId ?? ""),
     );
   });
+
+  if (mark?.kind !== "land-monster-pairing" || !(root instanceof HTMLElement)) {
+    return;
+  }
+
+  const bubble = root.querySelector<HTMLElement>(
+    ".coach-mark-land-monster-pairing",
+  );
+  const targets = targetCards.filter((card) =>
+    targetIds.has(card.dataset.cardId ?? ""),
+  );
+  if (!bubble || targets.length !== mark.cardIds.length) {
+    return;
+  }
+
+  appendCoachMarkPointers(root, bubble, targets);
 }
 
 function findLandMonsterPairingTip(
@@ -178,6 +213,44 @@ function findSorceryTimingTip(
   };
 }
 
+function findPlayBeastTip(
+  state: MatchState,
+  playerId: PlayerId,
+  hasSummonedBaseMonster: boolean,
+): CoachMark | null {
+  if (
+    !canActInMainPhase(state, playerId) ||
+    state.turnNumber > 2 ||
+    hasSummonedBaseMonster
+  ) {
+    return null;
+  }
+
+  const player = getPlayer(state, playerId);
+  if (player.monsters.length >= 3) {
+    return null;
+  }
+
+  const readyElements = new Set(
+    player.lands.filter((land) => land.ready).map((land) => land.card.element),
+  );
+  const monster = player.hand.find(
+    (card) =>
+      card.kind === "monster" &&
+      card.category === "base-monster" &&
+      readyElements.has(card.element),
+  );
+  if (!monster) {
+    return null;
+  }
+
+  return {
+    kind: "play-a-beast",
+    message: "Consider playing a beast.",
+    cardIds: [monster.instanceId],
+  };
+}
+
 function shouldOfferPlayLandTip(
   state: MatchState,
   playerId: PlayerId,
@@ -216,4 +289,57 @@ function canActInMainPhase(state: MatchState, playerId: PlayerId): boolean {
     !state.result &&
     !state.responsePlayer &&
     state.stack.length === 0;
+}
+
+function appendCoachMarkPointers(
+  root: HTMLElement,
+  bubble: HTMLElement,
+  targets: readonly HTMLElement[],
+): void {
+  const rootRect = root.getBoundingClientRect();
+  if (rootRect.width === 0 || rootRect.height === 0) {
+    return;
+  }
+
+  const bubbleRect = bubble.getBoundingClientRect();
+  const startX = bubbleRect.left - rootRect.left + bubbleRect.width / 2;
+  const startY = bubbleRect.bottom - rootRect.top + 3;
+  const layer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  layer.setAttribute("class", "coach-mark-pointer-layer");
+  layer.setAttribute("data-coach-mark-pointer-layer", "true");
+  layer.setAttribute("aria-hidden", "true");
+  layer.setAttribute("viewBox", `0 0 ${rootRect.width} ${rootRect.height}`);
+  layer.setAttribute("preserveAspectRatio", "none");
+
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+  marker.setAttribute("id", "coach-mark-pointer-head");
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "8");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "7");
+  marker.setAttribute("markerHeight", "7");
+  marker.setAttribute("orient", "auto-start-reverse");
+  const head = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  head.setAttribute("class", "coach-mark-pointer-head");
+  head.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+  marker.append(head);
+  defs.append(marker);
+  layer.append(defs);
+
+  for (const target of targets) {
+    const targetRect = target.getBoundingClientRect();
+    const endX = targetRect.left - rootRect.left + targetRect.width / 2;
+    const endY = targetRect.top - rootRect.top + 12;
+    const controlX = (startX + endX) / 2;
+    const controlY = Math.max(startY + 48, endY - 58);
+    const pointer = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    pointer.setAttribute("class", "coach-mark-pointer");
+    pointer.setAttribute("data-coach-mark-target-id", target.dataset.cardId ?? "");
+    pointer.setAttribute("d", `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`);
+    pointer.setAttribute("marker-end", "url(#coach-mark-pointer-head)");
+    layer.append(pointer);
+  }
+
+  root.append(layer);
 }

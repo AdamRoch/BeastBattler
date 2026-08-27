@@ -1,8 +1,13 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 
 import { assembleDeck } from "../cards/catalog";
 import { createMatch, type MatchState } from "../rules/core";
-import { createCoachMarkTracker } from "./coach-marks";
+import {
+  applyCoachMarkTargets,
+  coachMarkMarkup,
+  createCoachMarkTracker,
+} from "./coach-marks";
 
 describe("tutorial coach marks", () => {
   it("points out a matching land and base monster during the local main phase", () => {
@@ -34,6 +39,52 @@ describe("tutorial coach marks", () => {
     });
   });
 
+  it("queues the beast tip after the sorcery tip when a matching ready land can pay for it", () => {
+    const spell = findSpell("bolt");
+    const land = findFireLand();
+    const monster = findFireMonster();
+    const tracker = createCoachMarkTracker();
+    const state = withPlayer(mainPhase(matchState()), "player-1", {
+      hand: [spell, monster],
+      lands: [{ card: land, ready: true }],
+      landPlayedThisTurn: true,
+    });
+
+    expect(tracker.update(state, "player-1")).toMatchObject({
+      kind: "sorcery-timing",
+    });
+    tracker.dismiss();
+    expect(tracker.update(state, "player-1")).toMatchObject({
+      kind: "play-a-beast",
+      message: "Consider playing a beast.",
+      cardIds: [monster.instanceId],
+    });
+  });
+
+  it("does not offer the beast tip after a base monster was summoned and later left play", () => {
+    const land = findFireLand();
+    const monster = findFireMonster();
+    const summonedState = withPlayer(mainPhase(matchState()), "player-1", {
+      hand: [],
+      lands: [{ card: land, ready: true }],
+      monsters: [{
+        card: monster,
+        damage: 0,
+        summonedOnTurn: 1,
+        summoningSick: true,
+      }],
+      landPlayedThisTurn: true,
+    });
+    const laterState = withPlayer(summonedState, "player-1", {
+      hand: [{ ...monster, instanceId: "later-fire-monster" }],
+      monsters: [],
+    });
+    const tracker = createCoachMarkTracker();
+
+    expect(tracker.update(summonedState, "player-1")).toBeNull();
+    expect(tracker.update(laterState, "player-1")).toBeNull();
+  });
+
   it("offers the land tip only when turn two starts in the local main phase", () => {
     const land = findFireLand();
     const tracker = createCoachMarkTracker();
@@ -63,6 +114,51 @@ describe("tutorial coach marks", () => {
     expect(tracker.update(mainPhase(state), "player-1")).not.toBeNull();
     expect(tracker.dismissForCard(land.instanceId)).toBe(true);
     expect(tracker.update(mainPhase(state), "player-1")).toBeNull();
+  });
+});
+
+describe("coach-mark targets", () => {
+  it("resolves both hand-card instance IDs and draws an arrow to each card", () => {
+    const [land, monster] = matchingLandAndMonster();
+    const root = document.createElement("div");
+    const mark = {
+      kind: "land-monster-pairing" as const,
+      message: "This land summons this beast.",
+      cardIds: [land.instanceId, monster.instanceId],
+    };
+    root.innerHTML = `
+      <button class="hand-card" data-card-id="other-card"></button>
+      <button class="hand-card" data-card-id="${land.instanceId}"></button>
+      <button class="hand-card" data-card-id="${monster.instanceId}"></button>
+      ${coachMarkMarkup(mark)}
+    `;
+    setRect(root, 0, 0, 1_000, 700);
+    setRect(root.querySelector(".coach-mark")!, 400, 260, 200, 64);
+    setRect(root.querySelector(`[data-card-id="${land.instanceId}"]`)!, 280, 500, 126, 176);
+    setRect(root.querySelector(`[data-card-id="${monster.instanceId}"]`)!, 594, 500, 126, 176);
+
+    applyCoachMarkTargets(root, mark);
+
+    expect(
+      root.querySelector(`[data-card-id="${land.instanceId}"]`)?.classList.contains(
+        "is-coach-mark-target",
+      ),
+    ).toBe(true);
+    expect(
+      root.querySelector(`[data-card-id="${monster.instanceId}"]`)?.classList.contains(
+        "is-coach-mark-target",
+      ),
+    ).toBe(true);
+    expect(
+      root.querySelector(`[data-card-id="other-card"]`)?.classList.contains(
+        "is-coach-mark-target",
+      ),
+    ).toBe(false);
+    expect(
+      [...root.querySelectorAll("[data-coach-mark-target-id]")].map(
+        (pointer) => pointer.getAttribute("data-coach-mark-target-id"),
+      ),
+    ).toEqual([land.instanceId, monster.instanceId]);
   });
 });
 
@@ -122,4 +218,16 @@ function findSpell(id: "bolt" | "destroy" | "draw" | "counterspell") {
     throw new Error(`Missing ${id}`);
   }
   return card;
+}
+
+function setRect(
+  element: Element,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    value: () => new DOMRect(left, top, width, height),
+  });
 }

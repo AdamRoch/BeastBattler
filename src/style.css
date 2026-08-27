@@ -1657,3 +1657,36 @@ canvas {
   .fusion-reveal-overlay.is-revealing::before,
   .fusion-reveal-overlay.is-revealing::after { animation: none; }
 }
+
+/* CARD-42 coach-mark pointers. */
+.coach-mark-pointer-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.coach-mark-pointer {
+  fill: none;
+  stroke: #8ce8ff;
+  stroke-width: 2.5;
+  stroke-dasharray: 9 7;
+  filter: drop-shadow(0 0 5px rgba(73, 215, 255, 0.92));
+  animation: coach-mark-pointer-dash 900ms linear infinite;
+}
+
+.coach-mark-pointer-head {
+  fill: #c6f7ff;
+  filter: drop-shadow(0 0 4px rgba(73, 215, 255, 0.92));
+}
+
+@keyframes coach-mark-pointer-dash {
+  to { stroke-dashoffset: -32; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-mark-pointer { animation: none; }
+}

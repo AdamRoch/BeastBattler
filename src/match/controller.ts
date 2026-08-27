@@ -1850,6 +1850,9 @@ export function mountMatch(
 
   unsubscribeOnline = online?.subscribe(applyOnlineUpdate) ?? (() => {});
   hud.addEventListener("click", handleClick);
+  const repositionCoachMarkPointers = () =>
+    applyCoachMarkTargets(hud, coachMarks.current());
+  window.addEventListener("resize", repositionCoachMarkPointers);
   const removePhaseAdvanceShortcut = installPhaseAdvanceShortcut(
     document,
     hud,
@@ -1883,6 +1886,7 @@ export function mountMatch(
       unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
+      window.removeEventListener("resize", repositionCoachMarkPointers);
       removePhaseAdvanceShortcut();
       hud.remove();
       drawLayer.remove();
