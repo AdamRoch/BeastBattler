@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Beast Battler SFX test</title>
+    <style>
+      :root { color: #eef7ff; background: #05070d; font-family: Inter, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; background: radial-gradient(circle at 50% 15%, #102a3c, #05070d 48%); }
+      main { width: min(920px, calc(100% - 40px)); margin: 0 auto; padding: 58px 0 90px; }
+      h1 { margin: 0; font: 700 clamp(42px, 7vw, 78px)/1 "Arial Narrow", Impact, sans-serif; letter-spacing: .035em; }
+      p { margin: 10px 0 34px; color: #84a2b5; }
+      button { min-height: 48px; border: 1px solid #24566d; border-radius: 5px; background: linear-gradient(145deg, #10283a, #08121d); color: #dcf7ff; font: 800 10px/1 system-ui; letter-spacing: .12em; cursor: pointer; }
+      button:hover { border-color: #6bdcff; filter: brightness(1.15); }
+      .sfx-preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+      .sfx-preview-ambient { width: 100%; margin-top: 18px; border-color: #597a89; }
+      .sfx-preview-status { display: block; margin-top: 22px; padding: 15px; overflow-wrap: anywhere; border: 1px solid #193849; background: #03080d; color: #6f93a7; font: 11px/1.5 ui-monospace, monospace; }
+      .sfx-controls { position: static; display: flex; gap: 12px; align-items: center; margin: 20px 0 28px; }
+      .sfx-controls button { min-width: 130px; }
+      .sfx-volume { display: flex; gap: 10px; align-items: center; color: #78a4b9; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+    </style>
+  </head>
+  <body>
+    <main id="sfx-preview">
+      <h1>Procedural SFX</h1>
+      <p>Every sound below is synthesized at runtime with WebAudio.</p>
+    </main>
+    <script type="module" src="/src/sfx/preview.ts"></script>
+  </body>
+</html>

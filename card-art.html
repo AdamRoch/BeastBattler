@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Beast Battler card art</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #050711;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        color: #e9f3ff;
+        background: #050711;
+      }
+
+      header {
+        padding: 28px clamp(18px, 4vw, 56px) 18px;
+        border-bottom: 1px solid #20233b;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.35rem, 2vw, 2rem);
+        letter-spacing: 0.035em;
+      }
+
+      #render-status {
+        margin-top: 7px;
+        color: #8491b4;
+        font-size: 0.88rem;
+      }
+
+      #card-art-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+        gap: 16px;
+        padding: 22px clamp(18px, 4vw, 56px) 48px;
+      }
+
+      .art-card {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid #252944;
+        border-radius: 12px;
+        background: #0d101d;
+        box-shadow: 0 14px 34px rgb(0 0 0 / 26%);
+      }
+
+      .art-card img {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 384 / 536;
+        object-fit: cover;
+        background: #090b14;
+      }
+
+      .art-card h2 {
+        padding: 11px 13px 12px;
+        color: #dceaff;
+        font-size: 0.9rem;
+        letter-spacing: 0.015em;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Card art pipeline</h1>
+      <p id="render-status">Preparing 29 card-art images</p>
+    </header>
+    <main id="card-art-grid" aria-label="Rendered card art"></main>
+    <script type="module" src="/src/card-art/preview.ts"></script>
+  </body>
+</html>
