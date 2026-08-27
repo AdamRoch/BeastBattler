@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ArenaAnimationEvent } from "../arena";
 import {
@@ -6,6 +6,7 @@ import {
   createSfxEngine,
   effectForAnimation,
   readSfxSettings,
+  summonAnnouncementPlan,
 } from "./index";
 
 describe("procedural sound effects", () => {
@@ -40,7 +41,7 @@ describe("procedural sound effects", () => {
   });
 
   it("keeps the full required one-shot roster explicit", () => {
-    expect(SFX_EFFECTS).toHaveLength(16);
+    expect(SFX_EFFECTS).toHaveLength(17);
     expect(new Set(SFX_EFFECTS).size).toBe(SFX_EFFECTS.length);
   });
 
@@ -68,4 +69,105 @@ describe("procedural sound effects", () => {
     });
     engine.dispose();
   });
+
+  it("calls the monster name, then schedules the warp through the SFX engine", async () => {
+    const spoken: SpeechSynthesisUtterance[] = [];
+    const engine = createSfxEngine({
+      audioContextFactory: fakeAudioContext,
+      storage: null,
+      speechSynthesis: {
+        cancel: vi.fn(),
+        speak: (utterance) => spoken.push(utterance),
+      },
+      speechUtteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
+    });
+
+    await engine.unlock();
+    engine.announceSummon("Stone Bull", "summon");
+
+    expect(spoken).toHaveLength(1);
+    expect(spoken[0]).toMatchObject({
+      text: "Stone Bull!",
+      pitch: 0.62,
+      rate: 0.82,
+      volume: 0.32,
+    });
+    spoken[0].onend?.(new Event("end") as SpeechSynthesisEvent);
+    expect(engine.getDebugState().effectCounts["summon-warp"]).toBe(1);
+
+    engine.playAnimation({ type: "summon", monsterId: "stone-bull" });
+    expect(engine.getDebugState().effectCounts.summon).toBe(0);
+    engine.dispose();
+  });
+
+  it("does not speak or schedule the warp while sound is muted", async () => {
+    const speak = vi.fn();
+    const engine = createSfxEngine({
+      audioContextFactory: fakeAudioContext,
+      storage: null,
+      speechSynthesis: { cancel: vi.fn(), speak },
+      speechUtteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
+    });
+
+    await engine.unlock();
+    engine.setMuted(true);
+    engine.announceSummon("Stone Bull", "fusion");
+    expect(speak).not.toHaveBeenCalled();
+    expect(engine.getDebugState().effectCounts["summon-warp"]).toBe(0);
+    engine.dispose();
+  });
+
+  it("keeps the announcer voice settings in one testable plan", () => {
+    expect(summonAnnouncementPlan("Steam Beast")).toEqual({
+      text: "Steam Beast!",
+      pitch: 0.62,
+      rate: 0.82,
+    });
+  });
 });
+
+function fakeAudioContext(): AudioContext {
+  const parameter = () => ({
+    value: 0,
+    setTargetAtTime: vi.fn(),
+    setValueAtTime: vi.fn(),
+    exponentialRampToValueAtTime: vi.fn(),
+  });
+  const node = () => ({ connect: vi.fn(), disconnect: vi.fn() });
+  const oscillator = () => ({
+    ...node(),
+    type: "sine",
+    frequency: parameter(),
+    detune: parameter(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    addEventListener: vi.fn(),
+  });
+
+  return {
+    state: "running",
+    currentTime: 0,
+    sampleRate: 44_100,
+    destination: node(),
+    createGain: () => ({ ...node(), gain: parameter() }),
+    createOscillator: oscillator,
+    createBuffer: (_channels: number, length: number) => ({
+      getChannelData: () => new Float32Array(length),
+    }),
+    createBufferSource: () => ({
+      ...node(),
+      buffer: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+    }),
+    createBiquadFilter: () => ({
+      ...node(),
+      type: "lowpass",
+      frequency: parameter(),
+      Q: parameter(),
+    }),
+    resume: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as unknown as AudioContext;
+}

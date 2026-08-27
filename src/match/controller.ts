@@ -886,6 +886,7 @@ export function mountMatch(
           const resultObject = createMonsterModel(item.card.name as AssignedMonsterId);
           arena.stageFusion(sources, item.card.instanceId, resultObject);
           sceneIds.add(item.card.instanceId);
+          options.sfx?.announceSummon(item.card.name, "fusion");
           arena.dispatchAnimation({
             type: "fusion",
             sourceIds: sources,
@@ -978,6 +979,7 @@ export function mountMatch(
         createMonsterModel(entry.monster.card.name as AssignedMonsterId),
       );
       sceneIds.add(id);
+      options.sfx?.announceSummon(entry.monster.card.name, "summon");
       arena.dispatchAnimation({ type: "summon", monsterId: id });
     }
   }

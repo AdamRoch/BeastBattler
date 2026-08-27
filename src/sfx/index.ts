@@ -2,6 +2,7 @@ import type { ArenaScene, ArenaAnimationEvent } from "../arena";
 
 export const SFX_EFFECTS = [
   "summon",
+  "summon-warp",
   "fusion",
   "fusion-star3",
   "attack",
@@ -36,6 +37,10 @@ export interface SfxDebugState extends SfxSettings {
 export interface SfxEngine {
   unlock(): Promise<boolean>;
   play(effect: SfxEffect): void;
+  announceSummon(
+    monsterName: string,
+    materialization: "summon" | "fusion",
+  ): void;
   playLpTicks(count: number): void;
   playAnimation(event: ArenaAnimationEvent): void;
   setAmbientMonsterCount(count: number): void;
@@ -47,14 +52,31 @@ export interface SfxEngine {
   dispose(): void;
 }
 
-interface SfxEngineOptions {
+export interface SfxEngineOptions {
   readonly audioContextFactory?: () => AudioContext;
   readonly storage?: Pick<Storage, "getItem" | "setItem"> | null;
+  readonly speechSynthesis?: Pick<SpeechSynthesis, "cancel" | "speak"> | null;
+  readonly speechUtteranceFactory?: (text: string) => SpeechSynthesisUtterance;
 }
 
 const STORAGE_KEY = "beast-battler:sfx:v1";
 const DEFAULT_SETTINGS: SfxSettings = { muted: false, volume: 0.32 };
 const SILENCE = 0.0001;
+const ANNOUNCER_PITCH = 0.62;
+const ANNOUNCER_RATE = 0.82;
+const WARP_FALLBACK_DELAY_SECONDS = 0.14;
+
+export function summonAnnouncementPlan(monsterName: string): Readonly<{
+  text: string;
+  pitch: number;
+  rate: number;
+}> {
+  return {
+    text: `${monsterName}!`,
+    pitch: ANNOUNCER_PITCH,
+    rate: ANNOUNCER_RATE,
+  };
+}
 
 export function readSfxSettings(
   storage: Pick<Storage, "getItem"> | null,
@@ -105,6 +127,10 @@ export function createSfxEngine(
     ? browserStorage()
     : options.storage;
   const contextFactory = options.audioContextFactory ?? createBrowserAudioContext;
+  const speech = options.speechSynthesis === undefined
+    ? browserSpeechSynthesis()
+    : options.speechSynthesis;
+  const createUtterance = options.speechUtteranceFactory ?? createBrowserUtterance;
   const settingsListeners = new Set<(settings: SfxSettings) => void>();
   const effectCounts = Object.fromEntries(
     SFX_EFFECTS.map((effect) => [effect, 0]),
@@ -116,6 +142,11 @@ export function createSfxEngine(
   let ambientGain: GainNode | null = null;
   let ambientMonsterCount = 0;
   let disposed = false;
+  let activeAnnouncements = 0;
+  const suppressedMaterializations: Record<"summon" | "fusion", number> = {
+    summon: 0,
+    fusion: 0,
+  };
 
   async function unlock(): Promise<boolean> {
     if (disposed) {
@@ -179,6 +210,45 @@ export function createSfxEngine(
 
   function play(effect: SfxEffect): void {
     scheduleEffect(effect, 0);
+  }
+
+  function announceSummon(
+    monsterName: string,
+    materialization: "summon" | "fusion",
+  ): void {
+    suppressedMaterializations[materialization] += 1;
+    if (!context || !masterGain || disposed || effectiveVolume() === 0) {
+      return;
+    }
+
+    const plan = summonAnnouncementPlan(monsterName);
+    if (!speech || !createUtterance) {
+      scheduleEffect("summon-warp", WARP_FALLBACK_DELAY_SECONDS);
+      return;
+    }
+
+    try {
+      const utterance = createUtterance(plan.text);
+      utterance.pitch = plan.pitch;
+      utterance.rate = plan.rate;
+      utterance.volume = effectiveVolume();
+      let settled = false;
+      const finishAnnouncement = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        activeAnnouncements = Math.max(0, activeAnnouncements - 1);
+        scheduleEffect("summon-warp", 0);
+      };
+      utterance.onend = finishAnnouncement;
+      utterance.onerror = finishAnnouncement;
+      activeAnnouncements += 1;
+      speech.speak(utterance);
+    } catch {
+      activeAnnouncements = Math.max(0, activeAnnouncements - 1);
+      scheduleEffect("summon-warp", WARP_FALLBACK_DELAY_SECONDS);
+    }
   }
 
   function playLpTicks(count: number): void {
@@ -246,6 +316,11 @@ export function createSfxEngine(
       case "summon":
         noise(0.42, 0.045, "bandpass", 1_250, 4);
         tone(150, 820, 0.46, 0.035, "sawtooth");
+        return;
+      case "summon-warp":
+        noise(0.3, 0.042, "bandpass", 1_380, 4.5);
+        tone(180, 1_120, 0.32, 0.04, "sawtooth");
+        tone(620, 1_460, 0.18, 0.018, "triangle", 0.08);
         return;
       case "fusion":
         tone(78, 660, 0.9, 0.045, "sawtooth");
@@ -316,6 +391,13 @@ export function createSfxEngine(
   }
 
   function playAnimation(event: ArenaAnimationEvent): void {
+    if (
+      (event.type === "summon" || event.type === "fusion") &&
+      suppressedMaterializations[event.type] > 0
+    ) {
+      suppressedMaterializations[event.type] -= 1;
+      return;
+    }
     play(effectForAnimation(event));
   }
 
@@ -332,6 +414,10 @@ export function createSfxEngine(
 
   function setMuted(muted: boolean): void {
     settings = { ...settings, muted };
+    if (muted && activeAnnouncements > 0) {
+      activeAnnouncements = 0;
+      speech?.cancel();
+    }
     applySettings();
   }
 
@@ -375,6 +461,10 @@ export function createSfxEngine(
   function dispose(): void {
     disposed = true;
     settingsListeners.clear();
+    if (activeAnnouncements > 0) {
+      activeAnnouncements = 0;
+      speech?.cancel();
+    }
     if (context && context.state !== "closed") {
       void context.close().catch(() => undefined);
     }
@@ -386,6 +476,7 @@ export function createSfxEngine(
   return {
     unlock,
     play,
+    announceSummon,
     playLpTicks,
     playAnimation,
     setAmbientMonsterCount,
@@ -505,6 +596,21 @@ function browserStorage(): Pick<Storage, "getItem" | "setItem"> | null {
   } catch {
     return null;
   }
+}
+
+function browserSpeechSynthesis(): Pick<SpeechSynthesis, "cancel" | "speak"> | null {
+  try {
+    return globalThis.speechSynthesis ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function createBrowserUtterance(text: string): SpeechSynthesisUtterance {
+  if (!globalThis.SpeechSynthesisUtterance) {
+    throw new Error("SpeechSynthesis is not available");
+  }
+  return new globalThis.SpeechSynthesisUtterance(text);
 }
 
 function createBrowserAudioContext(): AudioContext {
