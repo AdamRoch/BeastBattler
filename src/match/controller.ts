@@ -62,6 +62,10 @@ import {
   type PrivacyCurtainReason,
   type PrivacyCurtainRequest,
 } from "./privacy-curtain";
+import {
+  installPhaseAdvanceShortcut,
+  phaseAdvanceButton,
+} from "./phase-advance-shortcut";
 import type { SfxEngine } from "../sfx";
 
 const HUMAN: PlayerId = "player-1";
@@ -365,9 +369,9 @@ export function mountMatch(
     }
     switch (state.phase) {
       case "draw":
-        return '<button class="primary-action" data-action="advance">BEGIN MAIN PHASE</button>';
+        return phaseAdvanceButton("BEGIN MAIN PHASE");
       case "main":
-        return '<button class="primary-action" data-action="advance">TO COMBAT</button>';
+        return phaseAdvanceButton("TO COMBAT");
       case "combat":
         if (!hasReadyAttackers(state, player.id)) {
           return "";
@@ -378,7 +382,7 @@ export function mountMatch(
         `;
       case "end": {
         const excess = Math.max(0, player.hand.length - 7);
-        return `<button class="primary-action" data-action="advance">${excess ? `DISCARD ${excess} & ` : ""}END TURN</button>`;
+        return phaseAdvanceButton(`${excess ? `DISCARD ${excess} & ` : ""}END TURN`);
       }
     }
   }
@@ -1528,6 +1532,17 @@ export function mountMatch(
 
   unsubscribeOnline = online?.subscribe(applyOnlineUpdate) ?? (() => {});
   hud.addEventListener("click", handleClick);
+  const removePhaseAdvanceShortcut = installPhaseAdvanceShortcut(
+    document,
+    hud,
+    () => document.activeElement,
+    () => ({
+      targetingActive: pendingTarget !== null,
+      responseWindowOpen: state.responsePlayer !== null,
+      mulliganDecisionPending: state.phase === "mulligan",
+      hotseatCurtainOpen: privacyCurtain !== null,
+    }),
+  );
   render();
 
   return {
@@ -1547,6 +1562,7 @@ export function mountMatch(
       unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
+      removePhaseAdvanceShortcut();
       hud.remove();
       art.dispose();
     },

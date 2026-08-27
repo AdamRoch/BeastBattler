@@ -774,6 +774,29 @@ canvas {
 .quiet-action:hover,
 .prompt-options button:hover { filter: brightness(1.24); transform: translateY(-1px); }
 
+.phase-advance-action { display: inline-flex; align-items: center; gap: 8px; }
+.key-hint {
+  padding: 2px 5px;
+  border: 1px solid rgba(207, 246, 255, 0.42);
+  border-radius: 3px;
+  background: rgba(2, 19, 29, 0.5);
+  color: #c5f4ff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .quiet-action { border-color: rgba(154, 181, 197, 0.25); background: rgba(27, 39, 51, 0.86); color: #b3c5d0; }
 .text-action { min-height: 28px; border: 0; background: transparent; color: #7793a5; }
 
