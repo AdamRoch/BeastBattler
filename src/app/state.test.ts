@@ -7,11 +7,21 @@ import {
   returnToTitle,
   selectArchetype,
   selectMode,
+  showOnlineLobby,
   showModeSelect,
   showResult,
 } from "./state";
 
 describe("screen flow state", () => {
+  it("opens the online lobby without configuring a local match", () => {
+    expect(showOnlineLobby(createInitialAppState())).toMatchObject({
+      screen: "online-lobby",
+      mode: null,
+      playerOneArchetype: null,
+      playerTwoArchetype: null,
+    });
+  });
+
   it("routes an AI selection directly into a configured match", () => {
     let state = showModeSelect(createInitialAppState());
     state = selectMode(state, "ai");

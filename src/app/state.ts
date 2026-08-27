@@ -6,6 +6,7 @@ export type GameMode = "ai" | "hotseat";
 export type AppScreen =
   | "title"
   | "mode-select"
+  | "online-lobby"
   | "deck-select"
   | "deck-handoff"
   | "match"
@@ -51,6 +52,18 @@ export function selectMode(state: AppState, mode: GameMode): AppState {
     screen: "deck-select",
     mode,
     selectingPlayer: 1,
+    playerOneArchetype: null,
+    playerTwoArchetype: null,
+    result: null,
+  };
+}
+
+export function showOnlineLobby(state: AppState): AppState {
+  return {
+    ...state,
+    screen: "online-lobby",
+    mode: null,
+    selectingPlayer: null,
     playerOneArchetype: null,
     playerTwoArchetype: null,
     result: null,

@@ -5,6 +5,11 @@ import {
   type ArchetypeId,
 } from "../cards/catalog";
 import { mountMatch, type MatchController } from "../match/controller";
+import {
+  mountOnlineLobby,
+  type OnlineLobbyController,
+  type OnlineMatchSession,
+} from "../lobby/online-lobby";
 import type { MatchResult } from "../rules/core";
 import type { SfxEngine } from "../sfx";
 import {
@@ -15,6 +20,7 @@ import {
   returnToTitle,
   selectArchetype,
   selectMode,
+  showOnlineLobby,
   showModeSelect,
   showResult,
   type AppState,
@@ -28,6 +34,7 @@ export interface AppController {
 
 export interface AppControllerOptions {
   readonly sfx?: SfxEngine;
+  readonly startOnlineMatch?: (session: OnlineMatchSession) => void;
 }
 
 export function mountApp(
@@ -41,6 +48,7 @@ export function mountApp(
 
   let state = createInitialAppState();
   let matchController: MatchController | null = null;
+  let onlineLobby: OnlineLobbyController | null = null;
   let renderedScreen = state.screen;
 
   function render(): void {
@@ -56,6 +64,7 @@ export function mountApp(
     }
 
     if (state.screen === "match") {
+      disposeOnlineLobby();
       screens.className = "screen-layer is-hidden";
       screens.innerHTML = "";
       startMatch();
@@ -63,6 +72,29 @@ export function mountApp(
     }
 
     screens.className = "screen-layer";
+    if (state.screen === "online-lobby") {
+      disposeMatch();
+      if (!onlineLobby) {
+        screens.innerHTML = "";
+        onlineLobby = mountOnlineLobby(screens, {
+          onReturnToTitle() {
+            onlineLobby = null;
+            state = returnToTitle();
+            render();
+          },
+          startMatch(session) {
+            onlineLobby = null;
+            if (options.startOnlineMatch) {
+              options.startOnlineMatch(session);
+              return;
+            }
+            screens.innerHTML = onlineMatchPlaceholder(session);
+          },
+        });
+      }
+      return;
+    }
+    disposeOnlineLobby();
     if (state.screen !== "result") {
       disposeMatch();
     }
@@ -128,6 +160,9 @@ export function mountApp(
         state = selectMode(state, mode);
         break;
       }
+      case "online":
+        state = showOnlineLobby(state);
+        break;
       case "select-deck": {
         const archetype = button.dataset.archetype;
         if (!isArchetypeId(archetype)) {
@@ -166,12 +201,18 @@ export function mountApp(
     getState: () => state,
     dispose() {
       disposeMatch();
+      disposeOnlineLobby();
       screens.removeEventListener("click", handleClick);
       screens.remove();
       delete root.dataset.screen;
       delete root.dataset.mode;
     },
   };
+
+  function disposeOnlineLobby(): void {
+    onlineLobby?.dispose();
+    onlineLobby = null;
+  }
 }
 
 function titleScreen(): string {
@@ -203,8 +244,25 @@ function modeScreen(): string {
           <strong>HOTSEAT</strong>
           <small>Two players, one device</small>
         </button>
+        <button class="mode-card mode-card-online" data-screen-action="online">
+          <span class="mode-icon" aria-hidden="true">◌</span>
+          <strong>ONLINE</strong>
+          <small>Find a live match</small>
+        </button>
       </div>
       <button class="flow-back" data-screen-action="back-title">BACK</button>
+    </main>
+  `;
+}
+
+function onlineMatchPlaceholder(session: OnlineMatchSession): string {
+  return `
+    <main class="flow-screen online-screen waiting-screen" data-testid="online-match-placeholder">
+      <section class="online-panel waiting-panel">
+        <span class="screen-kicker">MATCH STARTED</span>
+        <h1>OPPONENT FOUND</h1>
+        <p>Connected to ${session.opponentName}. The online match controller takes over here.</p>
+      </section>
     </main>
   `;
 }
