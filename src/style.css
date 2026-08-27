@@ -1690,3 +1690,47 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .coach-mark-pointer { animation: none; }
 }
+
+/* CARD-44: spell damage targeting outcomes */
+.targeting-prompt .target-option .target-damage-outcome {
+  color: #9beaff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.targeting-prompt .target-option.is-lethal-target {
+  border-color: rgba(255, 94, 121, 0.92);
+  background: linear-gradient(180deg, rgba(156, 35, 63, 0.94), rgba(78, 14, 37, 0.97));
+  box-shadow: 0 0 0 1px rgba(255, 98, 127, 0.32), 0 0 19px rgba(255, 48, 91, 0.43);
+}
+
+.targeting-prompt .target-option .target-lethal-marker {
+  justify-self: start;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 170, 185, 0.74);
+  border-radius: 2px;
+  background: rgba(43, 4, 17, 0.76);
+  color: #ffd7df;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.targeting-prompt .target-option.is-lethal-target.is-recommended-target {
+  border-color: rgba(255, 209, 101, 0.98);
+  box-shadow: 0 0 0 2px rgba(255, 207, 96, 0.38), 0 0 22px rgba(255, 50, 91, 0.58);
+  animation: lethal-recommended-target-pulse 1.35s ease-in-out infinite;
+}
+
+@keyframes lethal-recommended-target-pulse {
+  50% {
+    border-color: rgba(255, 230, 159, 1);
+    box-shadow: 0 0 0 3px rgba(255, 219, 129, 0.44), 0 0 28px rgba(255, 58, 99, 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .targeting-prompt .target-option.is-lethal-target.is-recommended-target { animation: none; }
+}

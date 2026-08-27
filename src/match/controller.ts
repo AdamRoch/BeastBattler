@@ -72,6 +72,7 @@ import {
 } from "./coach-marks";
 import { createSummonTipTracker } from "./summon-tip";
 import {
+  damageOutcome,
   isRecommendedTarget,
   monsterTargetLabel,
   requiresSelfTargetConfirmation,
@@ -678,26 +679,37 @@ export function mountMatch(
         </section>
       `;
     }
-    const targetClass = (targetOwner: PlayerId): string =>
-      isRecommendedTarget(card.effect, localId, targetOwner)
-        ? " target-option is-recommended-target"
-        : " target-option";
-    const playerTargets = target.spellId === "bolt"
+    const damageAmount = card.effect.kind === "damage" ? card.effect.amount : null;
+    const targetClass = (targetOwner: PlayerId, isLethal = false): string =>
+      [
+        "target-option",
+        isRecommendedTarget(card.effect, localId, targetOwner)
+          ? "is-recommended-target"
+          : "",
+        isLethal ? "is-lethal-target" : "",
+      ].filter(Boolean).join(" ");
+    const playerTargets = damageAmount !== null
       ? `
-          <button class="${targetClass(otherId)}" data-action="target-player" data-player-id="${otherId}">Opponent LP ${other.life}</button>
-          <button class="${targetClass(localId)}" data-action="target-player" data-player-id="${localId}">Your LP ${local.life}</button>
+          <button class="${targetClass(otherId)}" data-action="target-player" data-player-id="${otherId}"><span class="target-label">Opponent LP ${other.life} <span class="target-damage-outcome">→ ${damageOutcome(other.life, damageAmount).remaining}</span></span></button>
+          <button class="${targetClass(localId)}" data-action="target-player" data-player-id="${localId}"><span class="target-label">Your LP ${local.life} <span class="target-damage-outcome">→ ${damageOutcome(local.life, damageAmount).remaining}</span></span></button>
         `
       : "";
     const monsters = [...other.monsters, ...local.monsters];
     return `
       <section class="floating-prompt targeting-prompt" data-testid="targeting-prompt">
         <span class="eyebrow">${target.spellId.toUpperCase()}</span>
-        <h2>Choose a target</h2>
+        <h2>${damageAmount === null ? "Choose a target" : `${card.name} · deal ${damageAmount} damage`}</h2>
         <div class="prompt-options">
           ${playerTargets}
           ${monsters.map((monster) => {
             const owner = ownerOfMonster(state, monster.card.instanceId);
-            return `<button class="${targetClass(owner)}" data-action="target-monster" data-owner="${owner}" data-monster-id="${monster.card.instanceId}">${monsterTargetLabel(monster.card.name, monster.card.attack, monster.card.health - monster.damage, localId, owner)}</button>`;
+            const remainingHealth = monster.card.health - monster.damage;
+            const outcome = damageAmount === null
+              ? null
+              : damageOutcome(remainingHealth, damageAmount);
+            return `<button class="${targetClass(owner, outcome?.isLethal)}" data-action="target-monster" data-owner="${owner}" data-monster-id="${monster.card.instanceId}">${outcome === null
+              ? monsterTargetLabel(monster.card.name, monster.card.attack, remainingHealth, localId, owner)
+              : `<span class="target-label">${monsterTargetLabel(monster.card.name, monster.card.attack, remainingHealth, localId, owner)}</span><span class="target-damage-outcome">→ ${outcome.isLethal ? "0 HP" : `SURVIVES AT ${outcome.remaining} HP`}</span>${outcome.isLethal ? '<span class="target-lethal-marker">DESTROYED</span>' : ""}`}</button>`;
           }).join("")}
         </div>
         <button class="text-action" data-action="cancel-target">CANCEL</button>

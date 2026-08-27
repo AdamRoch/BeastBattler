@@ -1,5 +1,15 @@
 import type { PlayerId, SpellEffect } from "../rules/core";
 
+export interface DamageOutcome {
+  readonly remaining: number;
+  readonly isLethal: boolean;
+}
+
+export function damageOutcome(current: number, amount: number): DamageOutcome {
+  const remaining = Math.max(0, current - amount);
+  return { remaining, isLethal: remaining === 0 };
+}
+
 export function ownershipLabel(
   controller: PlayerId,
   targetOwner: PlayerId,
