@@ -62,6 +62,11 @@ import {
 import { boardZoneMarkup } from "./board-zone";
 import { createSummonTipTracker } from "./summon-tip";
 import {
+  isRecommendedTarget,
+  monsterTargetLabel,
+  requiresSelfTargetConfirmation,
+} from "./targeting";
+import {
   privacyCurtainForTransition,
   privacyCurtainMarkup,
   type PrivacyCurtainReason,
@@ -162,6 +167,7 @@ export function mountMatch(
     : null;
   let selectedAttackers = new Set<string>();
   let pendingTarget: PendingTarget | null = null;
+  let targetConfirmation: SpellTarget | null = null;
   let pendingAttack: AttackDeclaration | null = null;
   let dismissedFusionKey = "";
   let notice = "Choose Keep or Mulligan to begin.";
@@ -221,6 +227,7 @@ export function mountMatch(
     viewingPlayer = playerId;
     selectedAttackers.clear();
     pendingTarget = null;
+    targetConfirmation = null;
     privacyCurtain = { playerId, reason };
     options.sfx?.play("curtain");
   }
@@ -623,10 +630,31 @@ export function mountMatch(
     const otherId = opponentId(localId);
     const local = getPlayer(state, localId);
     const other = getPlayer(state, otherId);
+    const card = findSpellByInstance(target.cardId);
+    if (!card) {
+      return "";
+    }
+    if (targetConfirmation) {
+      return `
+        <section class="floating-prompt targeting-prompt targeting-confirmation" data-testid="targeting-self-confirm">
+          <span class="eyebrow">${card.name.toUpperCase()}</span>
+          <h2>Are you sure?</h2>
+          <p>This target is yours and is not recommended.</p>
+          <div class="decision-actions">
+            <button class="primary-action" data-action="confirm-target">CAST ANYWAY</button>
+            <button class="quiet-action" data-action="cancel-target-confirm">CANCEL</button>
+          </div>
+        </section>
+      `;
+    }
+    const targetClass = (targetOwner: PlayerId): string =>
+      isRecommendedTarget(card.effect, localId, targetOwner)
+        ? " target-option is-recommended-target"
+        : " target-option";
     const playerTargets = target.spellId === "bolt"
       ? `
-          <button data-action="target-player" data-player-id="${otherId}">Opponent LP ${other.life}</button>
-          <button data-action="target-player" data-player-id="${localId}">Your LP ${local.life}</button>
+          <button class="${targetClass(otherId)}" data-action="target-player" data-player-id="${otherId}">Opponent LP ${other.life}</button>
+          <button class="${targetClass(localId)}" data-action="target-player" data-player-id="${localId}">Your LP ${local.life}</button>
         `
       : "";
     const monsters = [...other.monsters, ...local.monsters];
@@ -636,7 +664,10 @@ export function mountMatch(
         <h2>Choose a target</h2>
         <div class="prompt-options">
           ${playerTargets}
-          ${monsters.map((monster) => `<button data-action="target-monster" data-owner="${ownerOfMonster(state, monster.card.instanceId)}" data-monster-id="${monster.card.instanceId}">${monster.card.name} ${monster.card.attack}/${monster.card.health - monster.damage}</button>`).join("")}
+          ${monsters.map((monster) => {
+            const owner = ownerOfMonster(state, monster.card.instanceId);
+            return `<button class="${targetClass(owner)}" data-action="target-monster" data-owner="${owner}" data-monster-id="${monster.card.instanceId}">${monsterTargetLabel(monster.card.name, monster.card.attack, monster.card.health - monster.damage, localId, owner)}</button>`;
+          }).join("")}
         </div>
         <button class="text-action" data-action="cancel-target">CANCEL</button>
       </section>
@@ -813,6 +844,7 @@ export function mountMatch(
         return;
       }
       pendingTarget = { cardId, spellId: card.id };
+      targetConfirmation = null;
       notice = `Choose a target for ${card.name}.`;
       render();
       return;
@@ -838,6 +870,7 @@ export function mountMatch(
         return;
       }
       pendingTarget = { cardId, spellId: card.id };
+      targetConfirmation = null;
       notice = `Choose a target for ${card.name}.`;
       render();
     } catch (error) {
@@ -853,15 +886,18 @@ export function mountMatch(
       render();
       return;
     }
-    if (sendOnlineIntent(
-      { kind: "cast-spell", cardId: card.instanceId, target, payWith },
-      `${card.name} sent to the server.`,
-    )) {
+    if (online) {
       pendingTarget = null;
+      targetConfirmation = null;
+      sendOnlineIntent(
+        { kind: "cast-spell", cardId: card.instanceId, target, payWith },
+        `${card.name} sent to the server.`,
+      );
       return;
     }
     try {
       pendingTarget = null;
+      targetConfirmation = null;
       applyState(
         castSpell(state, playerId, card.instanceId, target, payWith),
         `${card.name} waits on the stack.`,
@@ -1468,8 +1504,17 @@ export function mountMatch(
     }
     const card = findSpellByInstance(pendingTarget.cardId);
     if (card) {
-      castLocalSpell(card, { kind: "monster", playerId: owner, monsterId });
+      selectSpellTarget(card, { kind: "monster", playerId: owner, monsterId });
     }
+  }
+
+  function selectSpellTarget(card: SpellCard, target: SpellTarget): void {
+    if (requiresSelfTargetConfirmation(card.effect, localPlayerId(), target.playerId)) {
+      targetConfirmation = target;
+      render();
+      return;
+    }
+    castLocalSpell(card, target);
   }
 
   function findSpellByInstance(cardId: string): SpellCard | null {
@@ -1633,7 +1678,7 @@ export function mountMatch(
         const playerId = button.dataset.playerId as PlayerId | undefined;
         const card = pendingTarget ? findSpellByInstance(pendingTarget.cardId) : null;
         if (playerId && card) {
-          castLocalSpell(card, { kind: "player", playerId });
+          selectSpellTarget(card, { kind: "player", playerId });
         }
         return;
       }
@@ -1647,7 +1692,19 @@ export function mountMatch(
       }
       case "cancel-target":
         pendingTarget = null;
+        targetConfirmation = null;
         notice = "Spell targeting canceled.";
+        render();
+        return;
+      case "confirm-target": {
+        const card = pendingTarget ? findSpellByInstance(pendingTarget.cardId) : null;
+        if (card && targetConfirmation) {
+          castLocalSpell(card, targetConfirmation);
+        }
+        return;
+      }
+      case "cancel-target-confirm":
+        targetConfirmation = null;
         render();
         return;
       case "counter":
@@ -1679,6 +1736,7 @@ export function mountMatch(
         pendingFusionSources.clear();
         selectedAttackers.clear();
         pendingTarget = null;
+        targetConfirmation = null;
         pendingAttack = null;
         dismissedFusionKey = "";
         summonTip.reset();

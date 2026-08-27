@@ -1362,3 +1362,30 @@ canvas {
   .draw-deck-anchor[data-draw-deck="player-2"] { right: 12px; }
   .draw-deck-anchor[data-draw-deck="player-1"] { bottom: 12px; left: 12px; }
 }
+
+/* CARD-38: targeting guidance */
+.targeting-prompt .target-option.is-recommended-target {
+  border-color: rgba(255, 201, 87, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 201, 87, 0.24), 0 0 18px rgba(255, 175, 54, 0.38);
+  animation: recommended-target-pulse 1.6s ease-in-out infinite;
+}
+
+.targeting-confirmation p {
+  margin: 0 0 14px;
+  color: #d3bca0;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.targeting-confirmation .decision-actions { justify-content: flex-start; }
+
+@keyframes recommended-target-pulse {
+  50% {
+    border-color: rgba(255, 227, 140, 1);
+    box-shadow: 0 0 0 2px rgba(255, 211, 105, 0.34), 0 0 25px rgba(255, 175, 54, 0.54);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .targeting-prompt .target-option.is-recommended-target { animation: none; }
+}
