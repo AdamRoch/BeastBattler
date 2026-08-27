@@ -55,6 +55,10 @@ import {
   passResponse,
 } from "../rules/spells";
 import { resolveStackEvents } from "./events";
+import {
+  DrawAnimationQueue,
+  type QueuedDraw,
+} from "./draw-animation";
 import { boardZoneMarkup } from "./board-zone";
 import { createSummonTipTracker } from "./summon-tip";
 import {
@@ -75,6 +79,8 @@ const HUMAN_ARCHETYPE: ArchetypeId = "fire-water";
 const AI_ARCHETYPE: ArchetypeId = "earth-lightning";
 const EMPTY_COMBAT_DELAY_MS = 800;
 const SUMMON_TIP_DURATION_MS = 2_000;
+const DRAW_ANIMATION_DURATION_MS = 400;
+const DRAW_HIGHLIGHT_DURATION_MS = 1_000;
 
 interface PendingTarget {
   readonly cardId: string;
@@ -140,6 +146,10 @@ export function mountMatch(
   const hud = document.createElement("div");
   hud.className = "match-hud";
   root.append(hud);
+  const drawLayer = document.createElement("div");
+  drawLayer.className = "draw-animation-layer";
+  drawLayer.setAttribute("aria-hidden", "true");
+  root.append(drawLayer);
 
   const initialExtraDecks: Record<PlayerId, readonly FusionMonsterCard[]> = {
     "player-1": deriveExtraDeck(playerOneArchetype),
@@ -162,6 +172,13 @@ export function mountMatch(
   let resultSfxPlayed = false;
   let summonTipVisible = false;
   let summonTipTimer: number | undefined;
+  let renderedState = state;
+  const drawQueue = new DrawAnimationQueue();
+  const highlightedCardIds = new Set<string>();
+  const drawHighlightTimers = new Map<string, number>();
+  let activeDraw: QueuedDraw | null = null;
+  let activeDrawAnimation: Animation | null = null;
+  let drawAnimationToken = 0;
   let audioPhase = `${state.turnNumber}:${state.phase}`;
   const audibleLife: Record<PlayerId, number> = {
     "player-1": getPlayer(state, HUMAN).life,
@@ -219,6 +236,8 @@ export function mountMatch(
   }
 
   function render(): void {
+    drawQueue.enqueueTransition(renderedState, state);
+    renderedState = state;
     syncMatchSfx();
     const playerOne = getPlayer(state, HUMAN);
     const playerTwo = getPlayer(state, AI);
@@ -269,7 +288,7 @@ export function mountMatch(
           selectedAttackers,
           fusionPending: hasPendingFusion(AI),
         })}
-        <div class="land-readout">${landPips(playerTwo.lands)} <span>${playerTwo.hand.length} cards</span></div>
+        <div class="land-readout">${landPips(playerTwo.lands)} <span data-draw-hand="${AI}">${playerTwo.hand.length} cards</span></div>
       </section>
 
       <section class="board-readout board-player" aria-label="Player 1 board">
@@ -279,6 +298,9 @@ export function mountMatch(
         })}
         <div class="land-readout">${landPips(playerOne.lands)} <span>${playerOne.deck.length} deck</span></div>
       </section>
+
+      ${drawDeckAnchor(AI, playerTwo.deck.length)}
+      ${drawDeckAnchor(HUMAN, playerOne.deck.length)}
 
       ${handIsPrivate ? "" : `
         <section class="hand-fan" aria-label="Player ${localId === HUMAN ? 1 : 2} hand">
@@ -301,6 +323,8 @@ export function mountMatch(
       ${summonTipVisible ? '<aside class="summon-tip" data-testid="summon-tip" role="status">Lv1 creatures can\'t attack on their first turn.</aside>' : ""}
       ${privacyCurtainMarkup(privacyCurtain)}
     `;
+
+    startNextDrawAnimation();
 
     if (state.result && options.onComplete && !completionReported) {
       completionReported = true;
@@ -338,9 +362,12 @@ export function mountMatch(
     const midpoint = (count - 1) / 2;
     const offset = index - midpoint;
     const playable = isCardPlayable(card) ? " is-playable" : "";
+    const highlighted = highlightedCardIds.has(card.instanceId)
+      ? " is-newly-drawn"
+      : "";
     return `
       <button
-        class="hand-card${playable}"
+        class="hand-card${playable}${highlighted}"
         data-action="play-card"
         data-card-id="${card.instanceId}"
         style="--fan-index:${offset}; --fan-total:${count}"
@@ -351,6 +378,156 @@ export function mountMatch(
         ${cardStats(card)}
       </button>
     `;
+  }
+
+  function drawDeckAnchor(playerId: PlayerId, count: number): string {
+    return `
+      <div class="draw-deck-anchor" data-draw-deck="${playerId}" aria-label="${playerId === HUMAN ? "Your" : "Opponent"} deck">
+        <span>${count}</span>
+      </div>
+    `;
+  }
+
+  function startNextDrawAnimation(): void {
+    if (disposed || activeDraw || privacyCurtain || drawQueue.length === 0) {
+      return;
+    }
+
+    const draw = drawQueue.next();
+    if (!draw) {
+      return;
+    }
+
+    const source = hud.querySelector<HTMLElement>(
+      `[data-draw-deck="${draw.playerId}"]`,
+    );
+    const destination = drawDestination(draw);
+    if (!source || !destination) {
+      startNextDrawAnimation();
+      return;
+    }
+
+    const sourceBounds = source.getBoundingClientRect();
+    const destinationBounds = destination.getBoundingClientRect();
+    if (
+      sourceBounds.width === 0 || sourceBounds.height === 0 ||
+      destinationBounds.width === 0 || destinationBounds.height === 0
+    ) {
+      startNextDrawAnimation();
+      return;
+    }
+
+    activeDraw = draw;
+    const revealed = draw.playerId === localPlayerId() && draw.card !== null;
+    const flightCard = document.createElement("div");
+    flightCard.className = `draw-animation-card${revealed ? "" : " is-card-back"}`;
+    if (revealed && draw.card) {
+      flightCard.innerHTML = `<img src="${cardArt(draw.card)}" alt="" />`;
+    }
+    drawLayer.append(flightCard);
+
+    const token = ++drawAnimationToken;
+    const sourceCenter = centerOf(sourceBounds);
+    const destinationCenter = centerOf(destinationBounds);
+    const destinationWidth = revealed ? destinationBounds.width : 64;
+    const destinationHeight = revealed ? destinationBounds.height : 90;
+    const animation = flightCard.animate(
+      [
+        {
+          left: `${sourceCenter.x}px`,
+          top: `${sourceCenter.y}px`,
+          width: `${sourceBounds.width}px`,
+          height: `${sourceBounds.height}px`,
+          opacity: 0.35,
+          transform: "translate(-50%, -50%) rotate(-8deg)",
+        },
+        {
+          left: `${destinationCenter.x}px`,
+          top: `${destinationCenter.y}px`,
+          width: `${destinationWidth}px`,
+          height: `${destinationHeight}px`,
+          opacity: 1,
+          transform: "translate(-50%, -50%) rotate(0deg)",
+        },
+      ],
+      {
+        duration: DRAW_ANIMATION_DURATION_MS,
+        easing: "cubic-bezier(0.2, 0.75, 0.25, 1)",
+        fill: "forwards",
+      },
+    );
+    activeDrawAnimation = animation;
+    animation.onfinish = () => finishDrawAnimation(draw, flightCard, token);
+  }
+
+  function drawDestination(draw: QueuedDraw): HTMLElement | null {
+    const isLocalDraw = draw.playerId === localPlayerId();
+    if (isLocalDraw && draw.card) {
+      return [...hud.querySelectorAll<HTMLElement>("[data-card-id]")].find(
+        (card) => card.dataset.cardId === draw.card?.instanceId,
+      ) ?? null;
+    }
+
+    return hud.querySelector<HTMLElement>(
+      `[data-draw-hand="${draw.playerId}"]`,
+    ) ?? hud.querySelector<HTMLElement>(".hand-fan");
+  }
+
+  function finishDrawAnimation(
+    draw: QueuedDraw,
+    flightCard: HTMLElement,
+    token: number,
+  ): void {
+    if (disposed || token !== drawAnimationToken || activeDraw !== draw) {
+      return;
+    }
+
+    activeDrawAnimation = null;
+    activeDraw = null;
+    flightCard.remove();
+    if (draw.playerId === localPlayerId() && draw.card) {
+      highlightDrawnCard(draw.card.instanceId);
+      render();
+      return;
+    }
+    startNextDrawAnimation();
+  }
+
+  function highlightDrawnCard(cardId: string): void {
+    highlightedCardIds.add(cardId);
+    const priorTimer = drawHighlightTimers.get(cardId);
+    if (priorTimer !== undefined) {
+      window.clearTimeout(priorTimer);
+    }
+    const timer = window.setTimeout(() => {
+      drawHighlightTimers.delete(cardId);
+      highlightedCardIds.delete(cardId);
+      if (!disposed) {
+        render();
+      }
+    }, DRAW_HIGHLIGHT_DURATION_MS);
+    drawHighlightTimers.set(cardId, timer);
+  }
+
+  function interruptDrawAnimations(): void {
+    drawQueue.clear();
+    drawAnimationToken += 1;
+    activeDrawAnimation?.cancel();
+    activeDrawAnimation = null;
+    activeDraw = null;
+    drawLayer.replaceChildren();
+    for (const timer of drawHighlightTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    drawHighlightTimers.clear();
+    highlightedCardIds.clear();
+  }
+
+  function centerOf(bounds: DOMRect): { x: number; y: number } {
+    return {
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+    };
   }
 
   function hasPendingFusion(playerId: PlayerId): boolean {
@@ -1361,6 +1538,7 @@ export function mountMatch(
     if (privacyCurtain) {
       return;
     }
+    interruptDrawAnimations();
     switch (action) {
       case "keep":
         chooseMulligan("keep");
@@ -1492,6 +1670,7 @@ export function mountMatch(
           return;
         }
         clearAnimationTimers();
+        interruptDrawAnimations();
         for (const id of [...sceneIds]) {
           arena.removeMonster(id);
         }
@@ -1557,6 +1736,7 @@ export function mountMatch(
       window.clearTimeout(emptyCombatTimer);
       window.clearTimeout(summonTipTimer);
       clearAnimationTimers();
+      interruptDrawAnimations();
       for (const id of [...sceneIds]) {
         arena.removeMonster(id);
       }
@@ -1568,6 +1748,7 @@ export function mountMatch(
       hud.removeEventListener("click", handleClick);
       removePhaseAdvanceShortcut();
       hud.remove();
+      drawLayer.remove();
       art.dispose();
     },
   };
