@@ -1,5 +1,5 @@
 import type { ArenaScene } from "../arena";
-import type { ArchetypeId } from "../cards/catalog";
+import type { OnlineMatchSession } from "../lobby/online-lobby";
 import type {
   GameCard,
   FusionMonsterCard,
@@ -38,19 +38,13 @@ export interface WebSocketLike {
   close(): void;
 }
 
-export interface OnlineMatchSession {
-  readonly displayName: string;
-  readonly reconnectToken?: ReconnectToken;
-  readonly matchId?: MatchId;
-  readonly playerArchetype: ArchetypeId;
-  readonly opponentArchetype?: ArchetypeId;
-  readonly socketUrl?: string;
-}
+export type { OnlineMatchSession };
 
 export interface OnlineMatchDependencies {
   readonly arena: ArenaScene;
   readonly sfx?: SfxEngine;
   readonly createSocket?: (url: string) => WebSocketLike;
+  readonly socketUrl?: string;
   readonly storage?: Storage;
   readonly now?: () => number;
   readonly schedule?: (callback: () => void, delayMs: number) => number;
@@ -65,8 +59,9 @@ export interface OnlineMatchController {
 }
 
 /**
- * Starts a server-authoritative match. The lobby supplies the reconnect token
- * it received from `welcome`, then this client owns the match socket.
+ * Starts a server-authoritative match. The lobby hands over its live socket
+ * (PRD §14.5: one socket per client) at `match.started`; this client adopts
+ * it without resending `hello` and owns it until dispose.
  */
 export function startOnlineMatch(
   root: HTMLElement,
@@ -102,7 +97,7 @@ export function startOnlineMatch(
   const match = mountMatch(root, deps.arena, {
     mode: "online",
     playerOneArchetype: session.playerArchetype,
-    playerTwoArchetype: session.opponentArchetype ?? session.playerArchetype,
+    playerTwoArchetype: session.playerArchetype,
     sfx: deps.sfx,
     online: client,
   });
@@ -129,6 +124,7 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
   private readonly now: () => number;
   private readonly schedule: (callback: () => void, delayMs: number) => number;
   private readonly cancel: (timer: number) => void;
+  private adoptedSocket: WebSocketLike | null;
   private socket: WebSocketLike | null = null;
   private reconnectTimer: number | null = null;
   private returnTimer: number | null = null;
@@ -152,7 +148,9 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
     const storedToken = this.storage?.getItem(tokenKey(session.matchId)) ?? undefined;
     this.reconnectToken = session.reconnectToken ?? storedToken;
     this.reconnectingFromStoredToken = !session.reconnectToken && Boolean(storedToken);
+    this.adoptedSocket = session.socket;
     this.matchId = session.matchId;
+    this.playerId = session.playerId;
   }
 
   getState(): MatchState | null {
@@ -166,11 +164,23 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
 
   connect(): void {
     if (this.disposed) return;
+    const adopted = this.adoptedSocket;
+    if (adopted) {
+      // The lobby already ran the hello/welcome handshake on this socket and
+      // consumed the first `match.started`; just take over the message stream.
+      this.adoptedSocket = null;
+      this.socket = adopted;
+      adopted.onmessage = (event) => this.receive(parseServerMessage(event.data));
+      adopted.onclose = () => this.handleClose(adopted);
+      adopted.onerror = () => {};
+      this.publish({ notice: `Matched with ${this.session.opponentName}.` });
+      return;
+    }
     if (this.reconnectingFromStoredToken && this.reconnectStartedAt === null) {
       this.reconnectStartedAt = this.now();
       this.publish({ notice: reconnectNotice(this.reconnectStartedAt, this.now()) });
     }
-    const socket = this.createSocket(this.session.socketUrl ?? defaultSocketUrl());
+    const socket = this.createSocket(this.deps.socketUrl ?? defaultSocketUrl());
     this.socket = socket;
     socket.onopen = () => {
       this.send({

@@ -3,6 +3,10 @@ import * as THREE from "three";
 import { mountApp } from "./app/controller";
 import { createArenaScene } from "./arena";
 import {
+  startOnlineMatch,
+  type OnlineMatchController,
+} from "./match/online";
+import {
   connectArenaSfx,
   createSfxEngine,
 } from "./sfx";
@@ -36,7 +40,22 @@ if (import.meta.env.DEV) {
 bindSfxToUserGestures(document, sfx);
 connectArenaSfx(arena, sfx);
 mountSfxControls(app, sfx);
-mountApp(app, arena, { sfx });
+
+let onlineMatch: OnlineMatchController | null = null;
+const controller = mountApp(app, arena, {
+  sfx,
+  startOnlineMatch(session) {
+    onlineMatch = startOnlineMatch(app, session, {
+      arena,
+      sfx,
+      onReturnToLobby() {
+        onlineMatch?.dispose();
+        onlineMatch = null;
+        controller.returnToOnlineLobby();
+      },
+    });
+  },
+});
 
 function resize(): void {
   camera.aspect = window.innerWidth / window.innerHeight;

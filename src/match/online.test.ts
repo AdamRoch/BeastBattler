@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { assembleDeck, deriveExtraDeck } from "../cards/catalog";
+import type { OnlineMatchSession } from "../lobby/online-lobby";
 import { createMatch } from "../rules/core";
 import { filterMatchState } from "../server/state-filter";
 import { OnlineMatchClient, toLocalMatchState, type WebSocketLike } from "./online";
@@ -45,6 +46,19 @@ function filteredState() {
   return filterMatchState(matchState(), "player-2");
 }
 
+/** The session the lobby builds when it hands its live socket over. */
+function lobbySession(socket: TestSocket): OnlineMatchSession {
+  return {
+    socket: socket as unknown as WebSocket,
+    displayName: "Ada",
+    reconnectToken: "resume-token",
+    matchId: "match-1",
+    playerId: "player-2",
+    opponentName: "Lin",
+    playerArchetype: "fire-water",
+  };
+}
+
 describe("toLocalMatchState", () => {
   it("keeps the viewer as the local player and represents the opponent hand only by count", () => {
     const source = filteredState();
@@ -61,19 +75,15 @@ describe("toLocalMatchState", () => {
 });
 
 describe("OnlineMatchClient", () => {
-  it("reconnects with the session token, maps server state, and translates target player ids", () => {
+  it("adopts the lobby socket without resending hello and maps server state", () => {
     const socket = new TestSocket();
+    socket.readyState = 1;
     const updates: string[] = [];
-    const client = new OnlineMatchClient({
-      displayName: "Ada",
-      reconnectToken: "resume-token",
-      matchId: "match-1",
-      playerArchetype: "fire-water",
-      opponentArchetype: "earth-air",
-      socketUrl: "ws://example.test/ws",
-    }, {
+    const client = new OnlineMatchClient(lobbySession(socket), {
       arena: {} as never,
-      createSocket: () => socket,
+      createSocket: () => {
+        throw new Error("the adopted socket must not be replaced");
+      },
       now: () => 1_000,
       schedule: () => 1,
       cancel: () => {},
@@ -83,16 +93,15 @@ describe("OnlineMatchClient", () => {
     });
 
     client.connect();
-    socket.open();
-    expect(JSON.parse(socket.sent[0])).toMatchObject({
-      type: "hello",
-      reconnectToken: "resume-token",
-    });
+    // The lobby already ran the hello/welcome handshake on this socket.
+    expect(socket.sent).toHaveLength(0);
+    expect(updates.at(-1)).toBe("Matched with Lin.");
 
-    socket.receive({ type: "match.started", matchId: "match-1", playerId: "player-2", opponentName: "Lin" });
     socket.receive({ type: "match.state", matchId: "match-1", state: filteredState() });
     expect(client.getState()?.players[0].id).toBe("player-1");
 
+    // The seat from the lobby session drives intent translation even though
+    // this client never saw the first match.started.
     client.sendIntent({
       kind: "cast-spell",
       cardId: "spell-1",
@@ -112,5 +121,103 @@ describe("OnlineMatchClient", () => {
       remainingMs: 60_000,
     });
     expect(updates.at(-1)).toBe("Opponent disconnected — waiting 60s");
+  });
+
+  it("keeps the adopted socket for a rematch started over the same connection", () => {
+    const socket = new TestSocket();
+    socket.readyState = 1;
+    const updates: string[] = [];
+    const client = new OnlineMatchClient(lobbySession(socket), {
+      arena: {} as never,
+      now: () => 1_000,
+      schedule: () => 1,
+      cancel: () => {},
+    });
+    client.subscribe((update) => {
+      if (update.notice) updates.push(update.notice);
+    });
+    client.connect();
+    socket.receive({ type: "match.state", matchId: "match-1", state: filteredState() });
+
+    client.requestRematch();
+    expect(JSON.parse(socket.sent.at(-1) ?? "{}")).toMatchObject({ type: "match.rematch" });
+
+    socket.receive({ type: "match.started", matchId: "match-1", playerId: "player-2", opponentName: "Lin" });
+    socket.receive({ type: "match.state", matchId: "match-1", state: filteredState() });
+    expect(updates).toContain("Matched with Lin.");
+    expect(client.getState()?.players[0].id).toBe("player-1");
+  });
+
+  it("reconnects with a fresh socket and the session token after the adopted socket closes", () => {
+    const adopted = new TestSocket();
+    adopted.readyState = 1;
+    const replacement = new TestSocket();
+    const updates: string[] = [];
+    const client = new OnlineMatchClient(lobbySession(adopted), {
+      arena: {} as never,
+      createSocket: () => replacement,
+      socketUrl: "ws://example.test/ws",
+      now: () => 1_000,
+      schedule: (callback) => {
+        callback();
+        return 1;
+      },
+      cancel: () => {},
+    });
+    client.subscribe((update) => {
+      if (update.notice) updates.push(update.notice);
+    });
+
+    client.connect();
+    adopted.close();
+    expect(updates.at(-1)).toBe("Disconnected — rejoining in 60s");
+
+    replacement.open();
+    expect(JSON.parse(replacement.sent[0] ?? "{}")).toMatchObject({
+      type: "hello",
+      displayName: "Ada",
+      reconnectToken: "resume-token",
+    });
+
+    replacement.receive({ type: "match.resumed", matchId: "match-1" });
+    replacement.receive({ type: "match.started", matchId: "match-1", playerId: "player-2", opponentName: "Lin" });
+    replacement.receive({ type: "match.state", matchId: "match-1", state: filteredState() });
+    expect(client.getState()?.players[0].id).toBe("player-1");
+  });
+
+  it("reports a forfeit win and hands back to the lobby after the notice", () => {
+    const socket = new TestSocket();
+    socket.readyState = 1;
+    const timers: Array<() => void> = [];
+    let returned = 0;
+    const client = new OnlineMatchClient(lobbySession(socket), {
+      arena: {} as never,
+      now: () => 1_000,
+      schedule: (callback) => {
+        timers.push(callback);
+        return timers.length;
+      },
+      cancel: () => {},
+      onReturnToLobby: () => {
+        returned += 1;
+      },
+    });
+    const updates: string[] = [];
+    client.subscribe((update) => {
+      if (update.notice) updates.push(update.notice);
+    });
+    client.connect();
+
+    socket.receive({
+      type: "match.ended",
+      matchId: "match-1",
+      winner: "player-2",
+      loser: "player-1",
+      reason: "forfeit",
+    });
+    expect(updates.at(-1)).toBe("Opponent forfeited. You win.");
+    expect(returned).toBe(0);
+    for (const fire of timers.splice(0)) fire();
+    expect(returned).toBe(1);
   });
 });

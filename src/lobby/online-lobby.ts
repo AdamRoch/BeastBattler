@@ -8,6 +8,7 @@ import {
   type ClientMessage,
   type LobbyMatch,
   type MatchId,
+  type ReconnectToken,
   type ServerMessage,
 } from "../server/protocol";
 import type { PlayerId } from "../rules/core";
@@ -32,9 +33,12 @@ interface StorageLike {
 
 export interface OnlineMatchSession {
   readonly socket: WebSocket;
+  readonly displayName: string;
+  readonly reconnectToken?: ReconnectToken;
   readonly matchId: MatchId;
   readonly playerId: PlayerId;
   readonly opponentName: string;
+  readonly playerArchetype?: ArchetypeId;
 }
 
 export interface OnlineLobbyOptions {
@@ -257,9 +261,12 @@ export function mountOnlineLobby(
         handedOff = true;
         options.startMatch({
           socket: socket as WebSocket,
+          displayName,
+          reconnectToken,
           matchId: message.matchId,
           playerId: message.playerId,
           opponentName: message.opponentName,
+          playerArchetype: selectedArchetype ?? undefined,
         });
         dispose(false);
         return;

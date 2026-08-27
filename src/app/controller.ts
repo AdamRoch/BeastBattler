@@ -29,6 +29,7 @@ import {
 
 export interface AppController {
   getState(): AppState;
+  returnToOnlineLobby(): void;
   dispose(): void;
 }
 
@@ -85,6 +86,8 @@ export function mountApp(
           startMatch(session) {
             onlineLobby = null;
             if (options.startOnlineMatch) {
+              screens.className = "screen-layer is-hidden";
+              screens.innerHTML = "";
               options.startOnlineMatch(session);
               return;
             }
@@ -199,6 +202,10 @@ export function mountApp(
 
   return {
     getState: () => state,
+    returnToOnlineLobby() {
+      state = showOnlineLobby(state);
+      render();
+    },
     dispose() {
       disposeMatch();
       disposeOnlineLobby();
