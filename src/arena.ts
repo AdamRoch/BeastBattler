@@ -58,6 +58,7 @@ export interface ArenaScene {
   ): THREE.Object3D;
   getMonster(monsterId: string): THREE.Object3D | undefined;
   getMonsterAt(zone: MonsterZone): THREE.Object3D | undefined;
+  pickMonsterAt(normalizedX: number, normalizedY: number): string | null;
   setMonsterSummoningSickness(monsterId: string, summoningSick: boolean): void;
   setSideElement(side: PlayerSide, element: ArenaElement): void;
   dispatchAnimation(event: ArenaAnimationEvent): void;
@@ -111,6 +112,8 @@ export function createArenaScene(aspect: number): ArenaScene {
 
   const monsters = new Map<string, PlacedMonster>();
   const occupancy = new Map<string, string>();
+  const monsterPointer = new THREE.Vector2();
+  const monsterRaycaster = new THREE.Raycaster();
   const animations = createArenaAnimationSystem({
     camera,
     getMonster: (monsterId) => monsters.get(monsterId)?.object,
@@ -222,6 +225,38 @@ export function createArenaScene(aspect: number): ArenaScene {
     return monsterId ? monsters.get(monsterId)?.object : undefined;
   }
 
+  function pickMonsterAt(normalizedX: number, normalizedY: number): string | null {
+    camera.updateMatrixWorld();
+    monsterLayer.updateMatrixWorld(true);
+    monsterPointer.set(normalizedX, normalizedY);
+    monsterRaycaster.setFromCamera(monsterPointer, camera);
+
+    const intersections = monsterRaycaster.intersectObjects(
+      [...monsters.values()].map((placement) => placement.object),
+      true,
+    );
+
+    for (const intersection of intersections) {
+      const monsterId = monsterIdForObject(intersection.object);
+      if (monsterId) {
+        return monsterId;
+      }
+    }
+    return null;
+  }
+
+  function monsterIdForObject(object: THREE.Object3D): string | null {
+    let candidate: THREE.Object3D | null = object;
+    while (candidate) {
+      const monsterId = candidate.userData.monsterId;
+      if (typeof monsterId === "string" && monsters.has(monsterId)) {
+        return monsterId;
+      }
+      candidate = candidate.parent;
+    }
+    return null;
+  }
+
   function dispatchAnimation(event: ArenaAnimationEvent): void {
     animations.dispatch(event);
     for (const listener of animationListeners) {
@@ -256,6 +291,7 @@ export function createArenaScene(aspect: number): ArenaScene {
     stageFusion,
     getMonster: (monsterId) => monsters.get(monsterId)?.object,
     getMonsterAt,
+    pickMonsterAt,
     setMonsterSummoningSickness(monsterId, summoningSick) {
       const monster = monsters.get(monsterId)?.object;
       if (!monster) {

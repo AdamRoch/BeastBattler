@@ -72,6 +72,10 @@ import {
 } from "./coach-marks";
 import { createSummonTipTracker } from "./summon-tip";
 import {
+  createMonsterTooltip,
+  monsterTooltipContent,
+} from "../scene/monster-tooltip";
+import {
   isRecommendedTarget,
   monsterTargetLabel,
   requiresSelfTargetConfirmation,
@@ -163,6 +167,8 @@ export function mountMatch(
   const hud = document.createElement("div");
   hud.className = "match-hud";
   root.append(hud);
+  const arenaCanvas = root.querySelector<HTMLCanvasElement>("canvas");
+  const monsterTooltip = createMonsterTooltip(root);
   const drawLayer = document.createElement("div");
   drawLayer.className = "draw-animation-layer";
   drawLayer.setAttribute("aria-hidden", "true");
@@ -259,6 +265,7 @@ export function mountMatch(
   }
 
   function render(): void {
+    hideMonsterTooltip();
     drawQueue.enqueueTransition(renderedState, state);
     renderedState = state;
     syncMatchSfx();
@@ -1298,6 +1305,45 @@ export function mountMatch(
     }, COACH_MARK_DURATION_MS);
   }
 
+  function handleMonsterPointerMove(event: PointerEvent): void {
+    if (!arenaCanvas) {
+      return;
+    }
+    const bounds = arenaCanvas.getBoundingClientRect();
+    if (
+      bounds.width === 0 ||
+      bounds.height === 0 ||
+      event.clientX < bounds.left ||
+      event.clientX > bounds.right ||
+      event.clientY < bounds.top ||
+      event.clientY > bounds.bottom
+    ) {
+      hideMonsterTooltip();
+      return;
+    }
+
+    const normalizedX = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+    const normalizedY = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+    const monsterId = arena.pickMonsterAt(normalizedX, normalizedY);
+    const monster = monsterId ? findMonster(state, monsterId) : null;
+    if (!monster) {
+      hideMonsterTooltip();
+      return;
+    }
+
+    arenaCanvas.style.cursor = "help";
+    monsterTooltip.show(
+      monsterTooltipContent(monster, hasSummoningSickness(state, monster)),
+      event.clientX,
+      event.clientY,
+    );
+  }
+
+  function hideMonsterTooltip(): void {
+    arenaCanvas?.style.removeProperty("cursor");
+    monsterTooltip.hide();
+  }
+
   function dismissCoachMarkForCard(cardId: string): void {
     if (!coachMarks.dismissForCard(cardId)) {
       return;
@@ -1851,6 +1897,8 @@ export function mountMatch(
 
   unsubscribeOnline = online?.subscribe(applyOnlineUpdate) ?? (() => {});
   hud.addEventListener("click", handleClick);
+  arenaCanvas?.addEventListener("pointermove", handleMonsterPointerMove);
+  arenaCanvas?.addEventListener("pointerleave", hideMonsterTooltip);
   const repositionCoachMarkPointers = () =>
     applyCoachMarkTargets(hud, coachMarks.current());
   window.addEventListener("resize", repositionCoachMarkPointers);
@@ -1887,11 +1935,15 @@ export function mountMatch(
       unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
+      arenaCanvas?.removeEventListener("pointermove", handleMonsterPointerMove);
+      arenaCanvas?.removeEventListener("pointerleave", hideMonsterTooltip);
+      hideMonsterTooltip();
       window.removeEventListener("resize", repositionCoachMarkPointers);
       removePhaseAdvanceShortcut();
       hud.remove();
       drawLayer.remove();
       fusionReveal.dispose();
+      monsterTooltip.dispose();
       art.dispose();
     },
   };
