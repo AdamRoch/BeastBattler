@@ -974,6 +974,11 @@ canvas {
   transform: translateX(-50%);
 }
 
+.online-match-status.is-countdown {
+  border-color: rgba(255, 107, 89, 0.88);
+  color: #ffd0c8;
+}
+
 @keyframes response-pulse {
   0% { box-shadow: 0 0 0 0 rgba(121, 156, 255, 0.58); }
   70% { box-shadow: 0 0 0 14px rgba(121, 156, 255, 0); }

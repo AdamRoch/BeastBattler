@@ -123,6 +123,34 @@ describe("OnlineMatchClient", () => {
     expect(updates.at(-1)).toBe("Opponent disconnected — waiting 60s");
   });
 
+  it("forwards server decision timers to the online renderer", () => {
+    const socket = new TestSocket();
+    socket.readyState = 1;
+    const client = new OnlineMatchClient(lobbySession(socket), {
+      arena: {} as never,
+      now: () => 1_000,
+      schedule: () => 1,
+      cancel: () => {},
+    });
+    let timers: unknown;
+    client.subscribe((update) => {
+      if (update.timers) timers = update.timers;
+    });
+    client.connect();
+
+    socket.receive({
+      type: "match.state",
+      matchId: "match-1",
+      state: {
+        ...filteredState(),
+        timers: [{ playerId: "player-2", stage: "countdown", deadline: 6_000 }],
+        fusionDeclined: false,
+      },
+    });
+
+    expect(timers).toEqual([{ playerId: "player-2", stage: "countdown", deadline: 6_000 }]);
+  });
+
   it("keeps the adopted socket for a rematch started over the same connection", () => {
     const socket = new TestSocket();
     socket.readyState = 1;

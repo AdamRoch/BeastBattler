@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { ServerMessage } from "./protocol";
-import { RECONNECT_GRACE_MS, RoomManager, type RoomConnection } from "./room-manager";
+import {
+  RECONNECT_GRACE_MS,
+  TIMER_COUNTDOWN_MS,
+  TIMER_QUIET_MS,
+  RoomManager,
+  type RoomConnection,
+} from "./room-manager";
 
 class TestConnection implements RoomConnection {
   readonly messages: ServerMessage[] = [];
@@ -20,18 +26,26 @@ class TestConnection implements RoomConnection {
 function managerWithClock() {
   let now = 1_000;
   let sequence = 0;
-  const timers: Array<() => void> = [];
+  const timers: Array<{ callback: () => void; delayMs: number; canceled: boolean }> = [];
   const manager = new RoomManager({
     now: () => now,
     random: () => 0.5,
     newId: () => `id-${++sequence}`,
-    schedule: (callback) => {
-      timers.push(callback);
+    schedule: (callback, delayMs) => {
+      timers.push({ callback, delayMs, canceled: false });
       return timers.length;
     },
-    cancel: () => {},
+    cancel: (handle) => {
+      const timer = timers[Number(handle) - 1];
+      if (timer) timer.canceled = true;
+    },
   });
-  return { manager, timers, setNow: (next: number) => { now = next; } };
+  const fireLatest = (delayMs: number) => {
+    const timer = [...timers].reverse().find((candidate) => candidate.delayMs === delayMs && !candidate.canceled);
+    if (!timer) throw new Error(`Missing active timer for ${delayMs}ms`);
+    timer.callback();
+  };
+  return { manager, timers, fireLatest, setNow: (next: number) => { now = next; } };
 }
 
 function connectPair(manager: RoomManager) {
@@ -107,20 +121,89 @@ describe("RoomManager reconnect handling", () => {
     expect(second.last("match.resumed")).toMatchObject({ type: "match.resumed" });
     expect(reconnected.last("match.state").state.you.id).toBe("player-1");
 
-    timers[0]();
+    const forfeitTimer = timers.find((timer) => timer.delayMs === RECONNECT_GRACE_MS);
+    expect(forfeitTimer?.canceled).toBe(true);
+    forfeitTimer?.callback();
     expect(second.messages.some((message) => message.type === "match.ended" && message.reason === "forfeit")).toBe(false);
   });
 
   it("forfeits after the grace callback and returns the connected player to the lobby", () => {
-    const { manager, timers } = managerWithClock();
+    const { manager, fireLatest } = managerWithClock();
     const { first, second, firstToken, secondToken } = connectPair(manager);
     manager.receive(firstToken, { type: "lobby.create", name: "Timeout", archetype: "fire-water" });
     manager.receive(secondToken, { type: "lobby.join", matchId: manager.openMatches()[0].id, archetype: "earth-air" });
 
     manager.disconnect(firstToken, first);
-    timers[0]();
+    fireLatest(RECONNECT_GRACE_MS);
 
     expect(second.last("match.ended")).toMatchObject({ winner: "player-2", loser: "player-1", reason: "forfeit" });
     expect(second.last("lobby.snapshot").matches).toEqual([]);
+  });
+});
+
+describe("RoomManager decision timers", () => {
+  it("moves from quiet time to countdown and keeps a mulligan hand on expiry", () => {
+    const { manager, fireLatest, setNow } = managerWithClock();
+    const { first, second, firstToken, secondToken } = connectPair(manager);
+    manager.receive(firstToken, { type: "lobby.create", name: "Timers", archetype: "fire-water" });
+    manager.receive(secondToken, { type: "lobby.join", matchId: manager.openMatches()[0].id, archetype: "earth-air" });
+
+    expect(first.last("match.state").state.timers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ playerId: "player-1", stage: "quiet", deadline: 1_000 + TIMER_QUIET_MS }),
+    ]));
+
+    setNow(1_000 + TIMER_QUIET_MS);
+    fireLatest(TIMER_QUIET_MS);
+    expect(first.last("match.state").state.timers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ playerId: "player-1", stage: "quiet" }),
+      expect.objectContaining({ playerId: "player-2", stage: "countdown", deadline: 1_000 + TIMER_QUIET_MS + TIMER_COUNTDOWN_MS }),
+    ]));
+
+    setNow(1_000 + TIMER_QUIET_MS + TIMER_COUNTDOWN_MS);
+    fireLatest(TIMER_COUNTDOWN_MS);
+    expect(second.last("match.state").state.you.mulliganDecision).toBe("kept");
+    expect(first.last("match.state").state.opponent.mulliganDecision).toBe("kept");
+  });
+
+  it("resets the deciding player's clock after an action", () => {
+    const { manager, fireLatest, setNow } = managerWithClock();
+    const { first, firstToken, secondToken } = connectPair(manager);
+    manager.receive(firstToken, { type: "lobby.create", name: "Reset", archetype: "fire-water" });
+    manager.receive(secondToken, { type: "lobby.join", matchId: manager.openMatches()[0].id, archetype: "earth-air" });
+
+    setNow(3_000);
+    manager.receive(firstToken, { type: "match.intent", intent: { kind: "keep-hand" } });
+    expect(first.last("match.state").state.timers).toEqual([
+      expect.objectContaining({ playerId: "player-2", stage: "quiet", deadline: 3_000 + TIMER_QUIET_MS }),
+    ]);
+
+    setNow(3_000 + TIMER_QUIET_MS);
+    fireLatest(TIMER_QUIET_MS);
+    expect(first.last("match.state").state.timers).toEqual([
+      expect.objectContaining({ playerId: "player-2", stage: "countdown" }),
+    ]);
+  });
+
+  it("freezes the remaining decision time while a player is in reconnect grace", () => {
+    const { manager, fireLatest, setNow } = managerWithClock();
+    const { first, second, firstToken, secondToken } = connectPair(manager);
+    manager.receive(firstToken, { type: "lobby.create", name: "Frozen", archetype: "fire-water" });
+    manager.receive(secondToken, { type: "lobby.join", matchId: manager.openMatches()[0].id, archetype: "earth-air" });
+
+    setNow(3_000);
+    manager.disconnect(secondToken, second);
+    setNow(50_000);
+    const reconnected = new TestConnection();
+    manager.connect(reconnected, { type: "hello", version: 1, reconnectToken: secondToken });
+
+    expect(reconnected.last("match.state").state.timers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ playerId: "player-1", stage: "quiet", deadline: 53_000 }),
+    ]));
+
+    setNow(53_000);
+    fireLatest(TIMER_QUIET_MS - 2_000);
+    expect(first.last("match.state").state.timers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ playerId: "player-2", stage: "countdown" }),
+    ]));
   });
 });

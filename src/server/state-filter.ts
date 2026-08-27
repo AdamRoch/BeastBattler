@@ -1,6 +1,6 @@
 import type { MatchState, PlayerId, PlayerState } from "../rules/core";
 import { opponentOf } from "../rules/core";
-import type { FilteredMatchState, MatchLogEntry, PrivatePlayerState, PublicPlayerState } from "./protocol";
+import type { DecisionTimer, FilteredMatchState, MatchLogEntry, PrivatePlayerState, PublicPlayerState } from "./protocol";
 
 function privatePlayer(player: PlayerState): PrivatePlayerState {
   return {
@@ -25,6 +25,8 @@ export function filterMatchState(
   viewer: PlayerId,
   log: readonly MatchLogEntry[] = [],
   combat: FilteredMatchState["combat"] = null,
+  timers: readonly DecisionTimer[] = [],
+  fusionDeclined = false,
 ): FilteredMatchState {
   const you = state.players.find((player) => player.id === viewer);
   const opponent = state.players.find((player) => player.id === opponentOf(viewer));
@@ -33,6 +35,6 @@ export function filterMatchState(
     you: privatePlayer(you), opponent: publicPlayer(opponent), firstPlayer: state.firstPlayer,
     activePlayer: state.activePlayer, phase: state.phase, turnNumber: state.turnNumber,
     result: state.result, stack: [...state.stack], responsePlayer: state.responsePlayer,
-    combat, log: [...log],
+    combat, log: [...log], timers: [...timers], fusionDeclined,
   };
 }

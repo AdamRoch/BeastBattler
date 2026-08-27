@@ -12,6 +12,7 @@ import type { SfxEngine } from "../sfx";
 import {
   PROTOCOL_VERSION,
   type ClientMessage,
+  type DecisionTimer,
   type FilteredMatchState,
   type MatchId,
   type MatchIntent,
@@ -76,10 +77,15 @@ export function startOnlineMatch(
   root.append(status);
 
   let statusText = "";
+  let timers: readonly DecisionTimer[] = [];
   const renderStatus = () => {
-    status.hidden = statusText.length === 0;
-    status.textContent = statusText;
+    const timer = timers.find((candidate) => candidate.playerId === client.localPlayerId()) ?? timers[0];
+    const timerText = timer ? formatTimer(timer, client.localPlayerId(), client.currentTime()) : "";
+    status.hidden = statusText.length === 0 && timerText.length === 0;
+    status.textContent = statusText || timerText;
+    status.classList.toggle("is-countdown", timer?.stage === "countdown");
   };
+  const timerTick = window.setInterval(renderStatus, 200);
 
   const unsubscribeStatus = client.subscribe((update) => {
     if (
@@ -91,6 +97,7 @@ export function startOnlineMatch(
     } else if (update.notice === "Match resumed.") {
       statusText = "";
     }
+    if (update.timers) timers = update.timers;
     renderStatus();
   });
 
@@ -110,6 +117,7 @@ export function startOnlineMatch(
     },
     dispose() {
       unsubscribeStatus();
+      window.clearInterval(timerTick);
       client.dispose();
       match.dispose();
       status.remove();
@@ -155,6 +163,14 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
 
   getState(): MatchState | null {
     return this.state;
+  }
+
+  localPlayerId(): PlayerId | null {
+    return this.playerId;
+  }
+
+  currentTime(): number {
+    return this.now();
   }
 
   subscribe(listener: (update: OnlineMatchUpdate) => void): () => void {
@@ -238,7 +254,13 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
       case "match.state":
         if (!this.acceptsMatch(message.matchId)) return;
         this.state = toLocalMatchState(message.state);
-        this.publish({ state: this.state, combat: remapCombat(message.state), notice: stateNotice(message.state) });
+        this.publish({
+          state: this.state,
+          combat: remapCombat(message.state),
+          timers: message.state.timers,
+          fusionDeclined: message.state.fusionDeclined,
+          notice: stateNotice(message.state),
+        });
         return;
       case "match.paused":
         if (!this.acceptsMatch(message.matchId)) return;
@@ -425,6 +447,14 @@ function stateNotice(state: FilteredMatchState): string {
   if (state.responsePlayer === state.you.id) return "You have priority. Counter the pending action or pass.";
   if (state.activePlayer === state.you.id) return "Your turn.";
   return "Opponent's turn.";
+}
+
+function formatTimer(timer: DecisionTimer, localPlayerId: PlayerId | null, now: number): string {
+  const seconds = Math.max(0, Math.ceil((timer.deadline - now) / 1_000));
+  const owner = timer.playerId === localPlayerId ? "Your" : "Opponent's";
+  return timer.stage === "countdown"
+    ? `${owner} decision expires in ${seconds}s`
+    : `${owner} decision countdown starts in ${seconds}s`;
 }
 
 function pauseNotice(

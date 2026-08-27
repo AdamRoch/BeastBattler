@@ -13,13 +13,15 @@ import {
   type PlayerId,
 } from "../rules/core";
 import { assignBlockers, declareAttackers, resolveCombat } from "../rules/combat";
-import { fuseMonsters, upgradeFusion } from "../rules/fusion";
+import { findFusionOptions, fuseMonsters, upgradeFusion } from "../rules/fusion";
 import { castCounterspell, castSpell, passResponse } from "../rules/spells";
 import { ARCHETYPES, assembleDeck, deriveExtraDeck, type ArchetypeId } from "../cards/catalog";
-import type { ClientMessage, LobbyMatch, MatchEndReason, MatchId, MatchIntent, MatchLogEntry, ReconnectToken, ServerMessage } from "./protocol";
+import type { ClientMessage, DecisionTimer, LobbyMatch, MatchEndReason, MatchId, MatchIntent, MatchLogEntry, ReconnectToken, ServerMessage } from "./protocol";
 import { filterMatchState } from "./state-filter";
 
 export const RECONNECT_GRACE_MS = 60_000;
+export const TIMER_QUIET_MS = 5_000;
+export const TIMER_COUNTDOWN_MS = 5_000;
 
 export interface RoomConnection {
   send(message: ServerMessage): void;
@@ -51,6 +53,22 @@ interface Room {
   combat: ReturnType<typeof declareAttackers> | null;
   log: MatchLogEntry[];
   rematchAccepted: Set<PlayerId>;
+  timers: Map<PlayerId, ActiveDecisionTimer>;
+  dismissedFusionKey: string | null;
+}
+
+type TimerDecision =
+  | Readonly<{ playerId: PlayerId; kind: "mulligan"; intent: Extract<MatchIntent, { kind: "keep-hand" }> }>
+  | Readonly<{ playerId: PlayerId; kind: "main"; intent: Extract<MatchIntent, { kind: "advance-phase" }> }>
+  | Readonly<{ playerId: PlayerId; kind: "combat"; intent: Extract<MatchIntent, { kind: "hold-attack" }> }>
+  | Readonly<{ playerId: PlayerId; kind: "blockers"; intent: Extract<MatchIntent, { kind: "assign-blockers" }> }>
+  | Readonly<{ playerId: PlayerId; kind: "response"; intent: Extract<MatchIntent, { kind: "pass-response" }> }>
+  | Readonly<{ playerId: PlayerId; kind: "fusion"; intent: Extract<MatchIntent, { kind: "dismiss-fusion" }> }>;
+
+interface ActiveDecisionTimer extends DecisionTimer {
+  readonly decision: TimerDecision;
+  handle: ReturnType<typeof setTimeout> | null;
+  remainingMs: number | null;
 }
 
 export interface RoomManagerOptions {
@@ -130,6 +148,7 @@ export class RoomManager {
       () => this.expireReconnect(room.id, seat.playerId, room.reconnectDeadline!),
       RECONNECT_GRACE_MS,
     );
+    this.pauseDecisionTimers(room);
     this.sendToRoom(room, {
       type: "match.paused",
       matchId: room.id,
@@ -165,7 +184,7 @@ export class RoomManager {
       id: this.newUniqueId(), name: cleanedName,
       seats: [{ playerId: "player-1", token: session.token, displayName: session.displayName, archetype, disconnectedAt: null }, null],
       state: null, status: "waiting", disconnectTimer: null, reconnectDeadline: null,
-      combat: null, log: [], rematchAccepted: new Set(),
+      combat: null, log: [], rematchAccepted: new Set(), timers: new Map(), dismissedFusionKey: null,
     };
     this.rooms.set(room.id, room);
     session.matchId = room.id;
@@ -183,6 +202,7 @@ export class RoomManager {
     room.state = this.newMatch(room);
     session.matchId = room.id;
     this.sendMatchStarted(room);
+    this.resetDecisionTimers(room);
     this.sendMatchState(room);
     this.broadcastLobby();
   }
@@ -194,10 +214,7 @@ export class RoomManager {
     if (!seat) return;
     if (room.reconnectDeadline) return this.error(session, "match_paused", "Wait for your opponent to reconnect.");
     try {
-      room.state = this.runIntent(room, seat.playerId, intent);
-      room.log.push({ actor: seat.playerId, intent: intent.kind, at: this.now() });
-      this.sendMatchState(room);
-      if (room.state.result) this.finishMatch(room, room.state.result.winner, room.state.result.loser, room.state.result.reason);
+      this.applyRoomIntent(room, seat.playerId, intent);
     } catch (error) {
       this.error(session, "illegal_intent", error instanceof RulesError ? error.message : "That action cannot be played now.");
     }
@@ -220,6 +237,14 @@ export class RoomManager {
       case "pass-response": return passResponse(state, playerId);
       case "fuse": return fuseMonsters(state, playerId, intent.parentIds);
       case "upgrade-fusion": return upgradeFusion(state, playerId, intent.fusionCardId, intent.baseMonsterCardId);
+      case "dismiss-fusion": {
+        if (state.activePlayer !== playerId || state.phase !== "main" || state.responsePlayer || state.stack.length > 0) {
+          throw new RulesError("Fusion can only be declined during your main phase");
+        }
+        if (fusionKey(state, playerId) !== intent.fusionKey) throw new RulesError("That fusion prompt is no longer available");
+        room.dismissedFusionKey = intent.fusionKey;
+        return state;
+      }
       case "declare-attackers": room.combat = declareAttackers(state, playerId, intent.attackerIds); return state;
       case "assign-blockers": {
         if (!room.combat) throw new RulesError("There is no attack to block");
@@ -232,6 +257,119 @@ export class RoomManager {
         return advancePhase(state);
       case "discard": return discardToHandLimit(state, playerId, intent.cardIds);
     }
+  }
+
+  private applyRoomIntent(room: Room, playerId: PlayerId, intent: MatchIntent): void {
+    room.state = this.runIntent(room, playerId, intent);
+    if (intent.kind !== "dismiss-fusion") room.dismissedFusionKey = null;
+    room.log.push({ actor: playerId, intent: intent.kind, at: this.now() });
+    this.resetDecisionTimers(room);
+    this.sendMatchState(room);
+    if (room.state.result) this.finishMatch(room, room.state.result.winner, room.state.result.loser, room.state.result.reason);
+  }
+
+  private resetDecisionTimers(room: Room): void {
+    this.cancelDecisionTimers(room);
+    if (!room.state || room.status !== "active" || room.reconnectDeadline) return;
+    for (const decision of this.timerDecisions(room)) {
+      this.startDecisionTimer(room, decision, "quiet", TIMER_QUIET_MS);
+    }
+  }
+
+  private timerDecisions(room: Room): readonly TimerDecision[] {
+    const state = room.state;
+    if (!state || state.result) return [];
+    if (state.phase === "mulligan") {
+      return state.players
+        .filter((player) => player.mulliganDecision === "pending")
+        .map((player) => ({ playerId: player.id, kind: "mulligan", intent: { kind: "keep-hand" } }));
+    }
+    if (room.combat) {
+      return [{ playerId: room.combat.defendingPlayer, kind: "blockers", intent: { kind: "assign-blockers", blocks: [] } }];
+    }
+    if (state.responsePlayer) {
+      return [{ playerId: state.responsePlayer, kind: "response", intent: { kind: "pass-response" } }];
+    }
+    if (state.phase === "main") {
+      const key = fusionKey(state, state.activePlayer);
+      if (key && key !== room.dismissedFusionKey) {
+        return [{ playerId: state.activePlayer, kind: "fusion", intent: { kind: "dismiss-fusion", fusionKey: key } }];
+      }
+      return [{ playerId: state.activePlayer, kind: "main", intent: { kind: "advance-phase" } }];
+    }
+    if (state.phase === "combat") {
+      return [{ playerId: state.activePlayer, kind: "combat", intent: { kind: "hold-attack" } }];
+    }
+    return [];
+  }
+
+  private startDecisionTimer(
+    room: Room,
+    decision: TimerDecision,
+    stage: DecisionTimer["stage"],
+    delayMs: number,
+  ): void {
+    const timer: ActiveDecisionTimer = {
+      playerId: decision.playerId,
+      decision,
+      stage,
+      deadline: this.now() + delayMs,
+      handle: null,
+      remainingMs: null,
+    };
+    room.timers.set(decision.playerId, timer);
+    timer.handle = this.schedule(() => this.advanceDecisionTimer(room, timer), delayMs);
+  }
+
+  private advanceDecisionTimer(room: Room, timer: ActiveDecisionTimer): void {
+    if (room.status !== "active" || room.reconnectDeadline || room.timers.get(timer.playerId) !== timer) return;
+    if (timer.stage === "quiet") {
+      this.startDecisionTimer(room, timer.decision, "countdown", TIMER_COUNTDOWN_MS);
+      this.sendMatchState(room);
+      return;
+    }
+    room.timers.delete(timer.playerId);
+    try {
+      if (timer.decision.kind === "main") {
+        this.applyRoomIntent(room, timer.playerId, { kind: "advance-phase" });
+        this.applyRoomIntent(room, timer.playerId, { kind: "hold-attack" });
+      } else {
+        this.applyRoomIntent(room, timer.playerId, timer.decision.intent);
+      }
+    } catch {
+      this.resetDecisionTimers(room);
+      this.sendMatchState(room);
+    }
+  }
+
+  private pauseDecisionTimers(room: Room): void {
+    for (const timer of room.timers.values()) {
+      if (timer.handle !== null) this.cancel(timer.handle);
+      timer.handle = null;
+      timer.remainingMs = Math.max(0, timer.deadline - this.now());
+    }
+  }
+
+  private resumeDecisionTimers(room: Room): void {
+    const paused = [...room.timers.values()];
+    room.timers.clear();
+    for (const timer of paused) {
+      this.startDecisionTimer(
+        room,
+        timer.decision,
+        timer.stage,
+        timer.remainingMs ?? (timer.stage === "quiet" ? TIMER_QUIET_MS : TIMER_COUNTDOWN_MS),
+      );
+    }
+  }
+
+  private cancelDecisionTimers(room: Room): void {
+    for (const timer of room.timers.values()) if (timer.handle !== null) this.cancel(timer.handle);
+    room.timers.clear();
+  }
+
+  private timerSnapshots(room: Room): readonly DecisionTimer[] {
+    return [...room.timers.values()].map(({ playerId, stage, deadline }) => ({ playerId, stage, deadline }));
   }
 
   private acceptRematch(session: PlayerSession): void {
@@ -248,7 +386,9 @@ export class RoomManager {
       room.combat = null;
       room.log = [];
       room.rematchAccepted.clear();
+      room.dismissedFusionKey = null;
       this.sendMatchStarted(room);
+      this.resetDecisionTimers(room);
       this.sendMatchState(room);
     }
   }
@@ -275,6 +415,7 @@ export class RoomManager {
       room.disconnectTimer = null;
       room.reconnectDeadline = null;
       this.sendToRoom(room, { type: "match.resumed", matchId: room.id });
+      this.resumeDecisionTimers(room);
     }
     this.sendMatchStarted(room);
     this.sendMatchState(room);
@@ -290,6 +431,7 @@ export class RoomManager {
 
   private finishMatch(room: Room, winner: PlayerId, loser: PlayerId, reason: MatchEndReason): void {
     if (room.disconnectTimer !== null) this.cancel(room.disconnectTimer);
+    this.cancelDecisionTimers(room);
     room.disconnectTimer = null;
     room.reconnectDeadline = null;
     room.status = "finished";
@@ -347,7 +489,18 @@ export class RoomManager {
     if (!room.state) return;
     for (const seat of room.seats) {
       if (!seat) continue;
-      this.sendByToken(seat.token, { type: "match.state", matchId: room.id, state: filterMatchState(room.state, seat.playerId, room.log, room.combat) });
+      this.sendByToken(seat.token, {
+        type: "match.state",
+        matchId: room.id,
+        state: filterMatchState(
+          room.state,
+          seat.playerId,
+          room.log,
+          room.combat,
+          this.timerSnapshots(room),
+          room.dismissedFusionKey !== null && room.state.activePlayer === seat.playerId,
+        ),
+      });
     }
   }
 
@@ -423,4 +576,10 @@ function shuffle<T>(cards: readonly T[], random: () => number): T[] {
     [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
   }
   return shuffled;
+}
+
+function fusionKey(state: MatchState, playerId: PlayerId): string {
+  return findFusionOptions(state, playerId)
+    .map((option) => option.parentIds.join("+"))
+    .join("|");
 }

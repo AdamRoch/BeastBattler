@@ -41,6 +41,7 @@ import {
   type BlockAssignment,
   type CombatPlan,
 } from "../rules/combat";
+import type { DecisionTimer, MatchIntent } from "../server/protocol";
 import {
   findFusionOptions,
   fuseMonsters,
@@ -61,7 +62,6 @@ import {
   type PrivacyCurtainRequest,
 } from "./privacy-curtain";
 import type { SfxEngine } from "../sfx";
-import type { MatchIntent } from "../server/protocol";
 
 const HUMAN: PlayerId = "player-1";
 const AI: PlayerId = "player-2";
@@ -92,6 +92,8 @@ export interface OnlineMatchUpdate {
   readonly state?: MatchState;
   readonly combat?: AttackDeclaration | null;
   readonly notice?: string;
+  readonly timers?: readonly DecisionTimer[];
+  readonly fusionDeclined?: boolean;
 }
 
 /**
@@ -712,6 +714,10 @@ export function mountMatch(
       const oldStack = [...state.stack];
       state = update.state;
       pendingAttack = update.combat ?? null;
+      const fusionKey = availableFusions(localPlayerId())
+        .map((option) => option.parentIds.join("+"))
+        .join("|");
+      dismissedFusionKey = update.fusionDeclined ? fusionKey : "";
       if (oldStack.length > 0 && state.stack.length === 0) {
         animateStackResolution(oldStack, state);
       } else {
@@ -1374,6 +1380,13 @@ export function mountMatch(
         return;
       }
       case "dismiss-fusion":
+        if (online) {
+          sendOnlineIntent(
+            { kind: "dismiss-fusion", fusionKey: button.dataset.fusionKey ?? "" },
+            "Fusion declined.",
+          );
+          return;
+        }
         dismissedFusionKey = button.dataset.fusionKey ?? "";
         render();
         return;

@@ -23,4 +23,17 @@ describe("filterMatchState", () => {
     );
     expect(view.opponent.extraDeck).toEqual(state.players[1].extraDeck);
   });
+
+  it("includes decision timers for both the deciding player and the opponent", () => {
+    const state = createMatch({
+      playerOneDeck: assembleDeck("fire-water"),
+      playerTwoDeck: assembleDeck("earth-air"),
+      playerOneExtraDeck: deriveExtraDeck("fire-water"),
+      playerTwoExtraDeck: deriveExtraDeck("earth-air"),
+    });
+    const timers = [{ playerId: "player-1" as const, stage: "countdown" as const, deadline: 12_000 }];
+
+    expect(filterMatchState(state, "player-1", [], null, timers).timers).toEqual(timers);
+    expect(filterMatchState(state, "player-2", [], null, timers).timers).toEqual(timers);
+  });
 });

@@ -35,6 +35,7 @@ export type MatchIntent =
   | Readonly<{ kind: "pass-response" }>
   | Readonly<{ kind: "fuse"; parentIds: readonly [string, string] }>
   | Readonly<{ kind: "upgrade-fusion"; fusionCardId: string; baseMonsterCardId: string }>
+  | Readonly<{ kind: "dismiss-fusion"; fusionKey: string }>
   | Readonly<{ kind: "declare-attackers"; attackerIds: readonly string[] }>
   | Readonly<{ kind: "assign-blockers"; blocks: readonly BlockAssignment[] }>
   | Readonly<{ kind: "hold-attack" }>
@@ -81,6 +82,12 @@ export interface MatchLogEntry {
   readonly at: number;
 }
 
+export interface DecisionTimer {
+  readonly playerId: PlayerId;
+  readonly stage: "quiet" | "countdown";
+  readonly deadline: number;
+}
+
 export interface FilteredMatchState {
   readonly you: PrivatePlayerState;
   readonly opponent: PublicPlayerState;
@@ -93,6 +100,8 @@ export interface FilteredMatchState {
   readonly responsePlayer: PlayerId | null;
   readonly combat: AttackDeclaration | null;
   readonly log: readonly MatchLogEntry[];
+  readonly timers: readonly DecisionTimer[];
+  readonly fusionDeclined: boolean;
 }
 
 export type MatchEndReason = MatchResult["reason"] | "forfeit";
