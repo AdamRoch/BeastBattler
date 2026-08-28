@@ -144,6 +144,7 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
   private serverPlayer: PlayerId | null = null;
   private state: MatchState | null = null;
   private disposed = false;
+  private forfeitAnnouncementPlayed = false;
 
   constructor(
     private readonly session: OnlineMatchSession,
@@ -283,7 +284,11 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
         if (!this.acceptsMatch(message.matchId)) return;
         this.publish({ notice: endNotice(message, this.serverPlayer) });
         if (message.reason === "forfeit" && message.winner === this.serverPlayer) {
-          this.returnTimer = this.schedule(() => this.deps.onReturnToLobby?.(), 1_800);
+          if (!this.forfeitAnnouncementPlayed) {
+            this.forfeitAnnouncementPlayed = true;
+            this.deps.sfx?.announce("opponent-forfeited-you-win");
+            this.returnTimer = this.schedule(() => this.deps.onReturnToLobby?.(), 1_800);
+          }
         }
         return;
       case "match.rematch-status":

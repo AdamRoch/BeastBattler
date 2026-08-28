@@ -103,6 +103,14 @@ import {
   resultMessageFor,
   resultMessageMarkup,
 } from "./result-message";
+import {
+  combatAnnouncement,
+  createAnnouncementDeduper,
+  fusionCompletionAnnouncement,
+  hasBeastFallen,
+  resultAnnouncement,
+} from "./announcer-events";
+import type { AnnouncerLine } from "../sfx/announcer";
 import type { SfxEngine } from "../sfx";
 
 const HUMAN: PlayerId = "player-1";
@@ -254,6 +262,7 @@ export function mountMatch(
   const retainedSceneIds = new Set<string>();
   const pendingFusionSources = new Map<string, readonly [string, string]>();
   const pendingFusionReveals = new Map<string, FusionRevealData>();
+  const announcementDeduper = createAnnouncementDeduper();
   const summonTip = createSummonTipTracker();
   const coachMarks = createCoachMarkTracker();
   let unsubscribeOnline = () => {};
@@ -437,7 +446,36 @@ export function mountMatch(
         ? "win"
         : resultMessageFor(state.result, localPlayerId()).outcome;
       options.sfx?.play(outcome === "win" ? "victory" : "defeat");
+      announce(
+        `result:${state.result.winner}:${state.result.loser}:${state.result.reason}`,
+        resultAnnouncement(state.result, localPlayerId()),
+      );
       options.sfx?.announceResult(outcome);
+    }
+  }
+
+  function announce(eventId: string, line: AnnouncerLine): void {
+    const uniqueLine = announcementDeduper.once(eventId, line);
+    if (uniqueLine) options.sfx?.announce(uniqueLine);
+  }
+
+  function announceStateTransition(before: MatchState, after: MatchState): void {
+    for (const item of after.stack) {
+      if (
+        item.kind === "fusion" &&
+        !before.stack.some((previous) => previous.stackId === item.stackId)
+      ) {
+        announce(`fusion-start:${item.stackId}`, "fusion-initiated");
+      }
+    }
+    if (hasBeastFallen(before, after)) {
+      const afterIds = new Set(after.players.flatMap((player) =>
+        player.monsters.map((monster) => monster.card.instanceId),
+      ));
+      const fallenIds = before.players.flatMap((player) =>
+        player.monsters.map((monster) => monster.card.instanceId),
+      ).filter((id) => !afterIds.has(id));
+      announce(`beast-fallen:${fallenIds.sort().join(",")}`, "a-beast-has-fallen");
     }
   }
 
@@ -1038,6 +1076,7 @@ export function mountMatch(
   function applyState(next: MatchState, message: string): void {
     const before = state;
     state = next;
+    announceStateTransition(before, next);
     notice = shouldSkipEmptyCombat() ? "No attack..." : message;
     syncScene(before, next);
     privacyTransition(before, next);
@@ -1063,6 +1102,7 @@ export function mountMatch(
       const before = state;
       const oldStack = [...state.stack];
       state = update.state;
+      announceStateTransition(before, state);
       pendingAttack = update.combat ?? null;
       const fusionKey = availableFusions(localPlayerId())
         .map((option) => option.parentIds.join("+"))
@@ -1118,6 +1158,7 @@ export function mountMatch(
     const stack = [...state.stack];
     try {
       state = passResponse(state, playerId);
+      announceStateTransition(before, state);
       animateStackResolution(stack, state);
       syncScene(before, state);
       notice = "The stack resolved.";
@@ -1149,6 +1190,7 @@ export function mountMatch(
     const result = runAiTurn(state, AI, { stopAtEmptyCombat: true });
     registerAiFusionActions(before, result.actions, result.state);
     state = result.state;
+    announceStateTransition(before, state);
 
     if (oldStack.length > 0 && result.actions.some((action) => action.kind === "pass-response")) {
       animateStackResolution(oldStack, state);
@@ -1256,6 +1298,10 @@ export function mountMatch(
       for (const reveal of reveals) {
         fusionReveal.showUpgrade(reveal);
         options.sfx?.announceSummon(reveal.result.name, "fusion");
+        announce(
+          `fusion-complete:${reveal.result.instanceId}:star3`,
+          fusionCompletionAnnouncement(3),
+        );
       }
     }
   }
@@ -1267,6 +1313,10 @@ export function mountMatch(
     const outcome = resolveStackEvents(stack);
     for (const item of outcome.resolved) {
       if (item.kind === "fusion") {
+        announce(
+          `fusion-complete:${item.stackId}`,
+          fusionCompletionAnnouncement(item.card.level),
+        );
         const reveal = pendingFusionReveals.get(item.stackId);
         if (reveal) {
           fusionReveal.show(reveal);
@@ -1299,6 +1349,9 @@ export function mountMatch(
         continue;
       }
       if (item.kind === "spell") {
+        if (item.card.id === "counterspell") {
+          announce(`counterspell:${item.stackId}`, "counterspell");
+        }
         animateSpell(item, stack);
       }
     }
@@ -1667,6 +1720,11 @@ export function mountMatch(
     animateCombat(plan);
     state = resolveCombat(state, plan);
     syncScene(before, state);
+    announce(
+      `combat:${plan.turnNumber}:${plan.attackingPlayer}:${plan.attackerIds.join(",")}`,
+      combatAnnouncement(plan, state.result),
+    );
+    announceStateTransition(before, state);
     notice = "Combat resolved.";
     if (shouldRender) {
       render();
