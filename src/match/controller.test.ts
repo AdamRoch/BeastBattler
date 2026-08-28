@@ -27,6 +27,8 @@ import {
   mountMatch,
   responseWindowMessage,
   TARGETING_TIMEOUT_MS,
+  type OnlineMatchAdapter,
+  type OnlineMatchUpdate,
 } from "./controller";
 import { AI_PRESENTATION_BEAT_MS } from "./ai-presentation";
 
@@ -179,6 +181,62 @@ describe("VS AI arena reconciliation", () => {
       controller.dispose();
     },
   );
+});
+
+describe("authoritative scene reconciliation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it.each(["ai", "hotseat"] as const)(
+    "places every monster from an initial %s snapshot exactly once",
+    (mode) => {
+      const root = document.createElement("div");
+      document.body.append(root);
+      const arena = createArenaScene(16 / 9);
+      const state = authoritativeMossState();
+      const controller = mountMatch(root, arena, { mode, initialState: state });
+
+      expect(occupiedMonsterIds(arena)).toEqual(["authoritative-moss"]);
+      expect(arena.getMonsterIds().filter((id) => id === "authoritative-moss")).toHaveLength(1);
+
+      controller.dispose();
+    },
+  );
+
+  it("does not let delayed death cleanup remove a monster restored by an online snapshot", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const arena = createArenaScene(16 / 9);
+    const live = authoritativeMossState();
+    const adapter = new TestOnlineAdapter(live);
+    const controller = mountMatch(root, arena, {
+      mode: "online",
+      online: adapter,
+      playerOneArchetype: "fire-earth",
+      playerTwoArchetype: "earth-lightning",
+    });
+
+    expect(occupiedMonsterIds(arena)).toEqual(["authoritative-moss"]);
+    const moss = getPlayer(live, "player-1").monsters[0];
+    if (!moss) throw new Error("Missing authoritative Moss Tortoise");
+    const retired = withPlayer(live, "player-1", {
+      monsters: [],
+      discardPile: [...getPlayer(live, "player-1").discardPile, moss.card],
+    });
+    adapter.publish({ state: retired });
+    expect(occupiedMonsterIds(arena)).toEqual([]);
+
+    adapter.publish({ state: live });
+    expect(occupiedMonsterIds(arena)).toEqual(["authoritative-moss"]);
+    vi.advanceTimersByTime(950);
+    expect(occupiedMonsterIds(arena)).toEqual(["authoritative-moss"]);
+    expect(arena.getMonster("authoritative-moss")).toBeTruthy();
+
+    controller.dispose();
+  });
 });
 
 describe("hand-card keywords", () => {
@@ -625,6 +683,27 @@ function humanMossTortoiseSummonState(): MatchState {
   });
 }
 
+function authoritativeMossState(): MatchState {
+  const deck = assembleDeck("fire-earth");
+  const moss = deck.find(
+    (card): card is BaseMonsterCard =>
+      card.kind === "monster" && card.category === "base-monster" && card.id === "moss-tortoise",
+  );
+  if (!moss) throw new Error("Missing authoritative Moss Tortoise fixture");
+  let state = createMatch({
+    playerOneDeck: deck,
+    playerTwoDeck: assembleDeck("earth-lightning"),
+    playerOneExtraDeck: deriveExtraDeck("fire-earth"),
+    playerTwoExtraDeck: deriveExtraDeck("earth-lightning"),
+  });
+  state = { ...state, activePlayer: "player-1", phase: "main", turnNumber: 5 };
+  state = withPlayer(state, "player-1", {
+    monsters: [permanent(moss, "authoritative-moss")],
+    mulliganDecision: "kept",
+  });
+  return withPlayer(state, "player-2", { mulliganDecision: "kept" });
+}
+
 function spellTargetingState(): MatchState {
   const deck = assembleDeck("fire-water");
   const bolt = deck.find(
@@ -731,6 +810,38 @@ function click(root: HTMLElement, selector: string): void {
   const button = root.querySelector<HTMLElement>(selector);
   if (!button) throw new Error(`Missing ${selector}`);
   button.click();
+}
+
+function occupiedMonsterIds(arena: ReturnType<typeof createArenaScene>): string[] {
+  return arena.getMonsterIds().filter((id) => arena.getMonsterZone(id));
+}
+
+class TestOnlineAdapter implements OnlineMatchAdapter {
+  private readonly listeners = new Set<(update: OnlineMatchUpdate) => void>();
+
+  constructor(private state: MatchState) {}
+
+  getState(): MatchState {
+    return this.state;
+  }
+
+  localPlayerId(): PlayerId {
+    return "player-1";
+  }
+
+  subscribe(listener: (update: OnlineMatchUpdate) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  publish(update: OnlineMatchUpdate): void {
+    if (update.state) this.state = update.state;
+    for (const listener of this.listeners) listener(update);
+  }
+
+  sendIntent(): void {}
+  requestRematch(): void {}
+  leaveMatch(): void {}
 }
 
 function setRect(

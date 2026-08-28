@@ -29,6 +29,9 @@ describe("createArenaScene", () => {
     expect(arena.getMonster("Cinder Wall")).toBe(second);
     expect(arena.getMonster("Inferno Beast")).toBe(result);
     expect(arena.getMonsterAt({ side: "player", slot: 0 })).toBe(result);
+    expect(arena.getMonsterIds()).toEqual(["Ember Imp", "Cinder Wall", "Inferno Beast"]);
+    expect(arena.getMonsterZone("Inferno Beast")).toEqual({ side: "player", slot: 0 });
+    expect(arena.getMonsterZone("Ember Imp")).toBeUndefined();
     expect(() =>
       arena.dispatchAnimation({
         type: "fusion",
@@ -89,6 +92,23 @@ describe("createArenaScene", () => {
 
     arena.setMonsterSummoningSickness("Ember Imp", false);
     expect(monster.getObjectByName("summoning-sickness-indicator")).toBeUndefined();
+  });
+
+  it("does not clear a replacement occupant when moving a released monster", () => {
+    const arena = createArenaScene(16 / 9);
+    arena.placeMonster("retired", { side: "player", slot: 0 }, new THREE.Group());
+    arena.releaseMonsterZone("retired");
+    const replacement = arena.placeMonster(
+      "replacement",
+      { side: "player", slot: 0 },
+      new THREE.Group(),
+    );
+
+    arena.moveMonster("retired", { side: "player", slot: 1 });
+
+    expect(arena.getMonsterAt({ side: "player", slot: 0 })).toBe(replacement);
+    expect(arena.getMonsterZone("replacement")).toEqual({ side: "player", slot: 0 });
+    expect(arena.getMonsterZone("retired")).toEqual({ side: "player", slot: 1 });
   });
 
   it("identifies a monster through its child mesh at a normalized screen point", () => {

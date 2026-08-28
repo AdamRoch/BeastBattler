@@ -58,6 +58,8 @@ export interface ArenaScene {
   ): THREE.Object3D;
   getMonster(monsterId: string): THREE.Object3D | undefined;
   getMonsterAt(zone: MonsterZone): THREE.Object3D | undefined;
+  getMonsterIds(): readonly string[];
+  getMonsterZone(monsterId: string): MonsterZone | undefined;
   pickMonsterAt(normalizedX: number, normalizedY: number): string | null;
   setMonsterSummoningSickness(monsterId: string, summoningSick: boolean): void;
   setSideElement(side: PlayerSide, element: ArenaElement): void;
@@ -166,7 +168,9 @@ export function createArenaScene(aspect: number): ArenaScene {
       throw new Error(`Monster zone is occupied: ${destinationKey}`);
     }
 
-    occupancy.delete(placement.zoneKey);
+    if (occupancy.get(placement.zoneKey) === monsterId) {
+      occupancy.delete(placement.zoneKey);
+    }
     occupancy.set(destinationKey, monsterId);
     placement.zoneKey = destinationKey;
     placement.object.position.copy(getZonePosition(zone));
@@ -223,6 +227,17 @@ export function createArenaScene(aspect: number): ArenaScene {
   function getMonsterAt(zone: MonsterZone): THREE.Object3D | undefined {
     const monsterId = occupancy.get(monsterZoneKey(zone));
     return monsterId ? monsters.get(monsterId)?.object : undefined;
+  }
+
+  function getMonsterZone(monsterId: string): MonsterZone | undefined {
+    const placement = monsters.get(monsterId);
+    if (!placement || occupancy.get(placement.zoneKey) !== monsterId) {
+      return undefined;
+    }
+    const [side, slotText] = placement.zoneKey.split(":");
+    const zone = { side, slot: Number(slotText) } as MonsterZone;
+    assertMonsterZone(zone);
+    return zone;
   }
 
   function pickMonsterAt(normalizedX: number, normalizedY: number): string | null {
@@ -291,6 +306,8 @@ export function createArenaScene(aspect: number): ArenaScene {
     stageFusion,
     getMonster: (monsterId) => monsters.get(monsterId)?.object,
     getMonsterAt,
+    getMonsterIds: () => [...monsters.keys()],
+    getMonsterZone,
     pickMonsterAt,
     setMonsterSummoningSickness(monsterId, summoningSick) {
       const monster = monsters.get(monsterId)?.object;
