@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assembleDeck } from "../cards/catalog";
+import { BASE_MONSTERS, assembleDeck } from "../cards/catalog";
 import {
   createMatch,
   type BaseMonsterCard,
@@ -77,6 +77,17 @@ describe("HUD board-zone projection", () => {
     expect(markup).toContain("READY");
     expect(markup).not.toContain("SICK");
   });
+
+  it("shows a base creature role in the board readout", () => {
+    const voltBat = BASE_MONSTERS.find((card) => card.id === "volt-bat");
+    if (!voltBat) throw new Error("Missing Volt Bat");
+    const state = withPlayerOneMonsters(matchState(), [permanent({
+      ...voltBat,
+      instanceId: "volt-bat-1",
+    })]);
+
+    expect(boardZoneMarkup(state, "player-1")).toContain("FLYING");
+  });
 });
 
 function matchState(): MatchState {
@@ -107,6 +118,7 @@ function baseMonster(): MonsterPermanent {
     attack: 2,
     health: 1,
     level: 1,
+    keyword: null,
   };
   return permanent(card);
 }

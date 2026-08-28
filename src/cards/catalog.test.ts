@@ -24,7 +24,7 @@ describe("the PRD card chart", () => {
   it("matches all 10 base monsters", () => {
     expect(
       BASE_MONSTERS.map(
-        ({ id, name, element, attack, health, cost, level }) => ({
+        ({ id, name, element, attack, health, cost, level, keyword }) => ({
           id,
           name,
           element,
@@ -32,19 +32,20 @@ describe("the PRD card chart", () => {
           health,
           cost,
           level,
+          keyword,
         }),
       ),
     ).toEqual([
       base("ember-imp", "Ember Imp", "fire", 2, 1),
-      base("cinder-wall", "Cinder Wall", "fire", 1, 2),
+      base("cinder-wall", "Cinder Wall", "fire", 1, 2, "reach"),
       base("tide-serpent", "Tide Serpent", "water", 1, 2),
       base("reef-guardian", "Reef Guardian", "water", 1, 3),
       base("stone-bull", "Stone Bull", "earth", 2, 2),
-      base("moss-tortoise", "Moss Tortoise", "earth", 1, 3),
-      base("gale-hawk", "Gale Hawk", "air", 2, 1),
+      base("moss-tortoise", "Moss Tortoise", "earth", 1, 3, "reach"),
+      base("gale-hawk", "Gale Hawk", "air", 2, 1, "flying"),
       base("cloud-sprite", "Cloud Sprite", "air", 1, 2),
       base("spark-lynx", "Spark Lynx", "lightning", 2, 1),
-      base("volt-bat", "Volt Bat", "lightning", 1, 2),
+      base("volt-bat", "Volt Bat", "lightning", 1, 2, "flying"),
     ]);
   });
 
@@ -189,6 +190,10 @@ describe("deck assembly", () => {
       expect(() =>
         createMatch({ playerOneDeck: deck, playerTwoDeck: deck }),
       ).not.toThrow();
+      expect(
+        monsters.some((card) => card.keyword === "flying" || card.keyword === "reach"),
+        `${archetype.id} answers Flying`,
+      ).toBe(true);
     }
   });
 });
@@ -224,8 +229,9 @@ function base(
   element: Element,
   attack: number,
   health: number,
+  keyword: "flying" | "reach" | null = null,
 ) {
-  return { id, name, element, attack, health, cost: 1, level: 1 };
+  return { id, name, element, attack, health, cost: 1, level: 1, keyword };
 }
 
 function fusion(

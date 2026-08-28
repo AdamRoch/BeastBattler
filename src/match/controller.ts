@@ -36,6 +36,7 @@ import {
 } from "../rules/core";
 import {
   assignBlockers,
+  canBlock,
   declareAttackers,
   resolveCombat,
   type AttackDeclaration,
@@ -452,6 +453,7 @@ export function mountMatch(
         <img src="${cardArt(card)}" alt="${card.name} card art" />
         <span class="card-name">${card.name}</span>
         ${cardStats(card)}
+        ${cardKeywordMarkup(card)}
       </button>
     `;
   }
@@ -829,7 +831,7 @@ export function mountMatch(
                 <span><strong>${attacker.card.name}</strong> ${attacker.card.attack}/${attacker.card.health}</span>
                 <select data-block-attacker="${attacker.card.instanceId}">
                   <option value="">Take the hit</option>
-                  ${blockers.map((blocker) => `<option value="${blocker.card.instanceId}">${blocker.card.name} ${blocker.card.attack}/${blocker.card.health - blocker.damage}</option>`).join("")}
+                  ${blockers.filter((blocker) => canBlock(attacker, blocker)).map((blocker) => `<option value="${blocker.card.instanceId}">${blocker.card.name} ${blocker.card.attack}/${blocker.card.health - blocker.damage}</option>`).join("")}
                 </select>
               </label>
             `).join("")}
@@ -1544,11 +1546,21 @@ export function mountMatch(
         render();
         return;
       }
-      const blockers = getPlayer(state, defenderId).monsters.slice(0, attackerIds.length);
-      const blocks = blockers.map((blocker, index): BlockAssignment => ({
-        attackerId: attackerIds[index],
-        blockerId: blocker.card.instanceId,
-      }));
+      const availableBlockers = [...getPlayer(state, defenderId).monsters];
+      const attackers = getPlayer(state, attackerId).monsters.filter((monster) =>
+        attackerIds.includes(monster.card.instanceId),
+      );
+      const blocks = attackers.flatMap((attacker): BlockAssignment[] => {
+        const blockerIndex = availableBlockers.findIndex((blocker) =>
+          canBlock(attacker, blocker),
+        );
+        if (blockerIndex === -1) return [];
+        const [blocker] = availableBlockers.splice(blockerIndex, 1);
+        return [{
+          attackerId: attacker.card.instanceId,
+          blockerId: blocker.card.instanceId,
+        }];
+      });
       const plan = assignBlockers(state, defenderId, declaration, blocks);
       resolveCombatPlan(plan);
       selectedAttackers = new Set();
@@ -2130,6 +2142,11 @@ function cardStats(card: GameCard): string {
     return `<small class="card-meta">${card.attack} ATK · ${card.health} HP</small>`;
   }
   return `<small class="card-meta">${card.timing.toUpperCase()} · COST 1</small>`;
+}
+
+export function cardKeywordMarkup(card: GameCard): string {
+  if (card.kind !== "monster" || !card.keyword) return "";
+  return `<small class="card-keyword">${card.keyword.toUpperCase()}</small>`;
 }
 
 function phaseLabel(state: MatchState): string {

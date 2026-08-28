@@ -26,6 +26,46 @@ export interface CombatPlan extends AttackDeclaration {
   readonly blocks: readonly BlockAssignment[];
 }
 
+/** Returns whether this blocker can legally block this attacker. */
+export function canBlock(
+  attacker: MonsterPermanent,
+  blocker: MonsterPermanent,
+): boolean {
+  return (
+    attacker.card.keyword !== "flying" ||
+    blocker.card.keyword === "flying" ||
+    blocker.card.keyword === "reach"
+  );
+}
+
+/**
+ * Counts the maximum number of attackers that the supplied blockers can
+ * legally cover. Each blocker and attacker may appear in only one block.
+ */
+export function countLegalBlockers(
+  attackers: readonly MonsterPermanent[],
+  blockers: readonly MonsterPermanent[],
+): number {
+  const attackerByBlockerIndex = new Map<number, MonsterPermanent>();
+
+  function assign(attacker: MonsterPermanent, visited: Set<number>): boolean {
+    for (let index = 0; index < blockers.length; index += 1) {
+      if (visited.has(index) || !canBlock(attacker, blockers[index])) continue;
+      visited.add(index);
+
+      const assignedAttacker = attackerByBlockerIndex.get(index);
+      if (!assignedAttacker || assign(assignedAttacker, visited)) {
+        attackerByBlockerIndex.set(index, attacker);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return attackers.reduce((count, attacker) =>
+    count + Number(assign(attacker, new Set<number>())), 0);
+}
+
 export function declareAttackers(
   state: MatchState,
   attackingPlayer: PlayerId,
@@ -187,7 +227,17 @@ function validateBlocks(
       throw new RulesError("A blocker must be assigned to a declared attacker");
     }
 
-    findMonster(defendingPlayer, block.blockerId, "blocker");
+    const attacker = findMonster(
+      getPlayer(state, declaration.attackingPlayer),
+      block.attackerId,
+      "attacker",
+    );
+    const blocker = findMonster(defendingPlayer, block.blockerId, "blocker");
+    if (!canBlock(attacker, blocker)) {
+      throw new RulesError(
+        `${blocker.card.name} cannot block a Flying attacker`,
+      );
+    }
   }
 }
 

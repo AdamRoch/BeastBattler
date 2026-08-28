@@ -6,7 +6,11 @@ import {
   type BaseMonsterCard,
 } from "../cards/catalog";
 import type { PendingStackItem } from "../rules/core";
-import { createFusionUpgradeOption, responseWindowMessage } from "./controller";
+import {
+  cardKeywordMarkup,
+  createFusionUpgradeOption,
+  responseWindowMessage,
+} from "./controller";
 
 describe("response window messages", () => {
   it("attributes spells, summons, and fusions to the opponent", () => {
@@ -54,6 +58,20 @@ describe("fusion upgrade prompt options", () => {
       baseMonsterName: "Ember Imp",
       baseMonsterPortraitId: "Ember Imp",
     });
+  });
+});
+
+describe("hand-card keywords", () => {
+  it("labels Flying and Reach cards without labeling ordinary cards", () => {
+    const deck = assembleDeck("fire-lightning");
+    const voltBat = deck.find((card) => card.kind === "monster" && card.name === "Volt Bat");
+    const cinderWall = deck.find((card) => card.kind === "monster" && card.name === "Cinder Wall");
+    const emberImp = deck.find((card) => card.kind === "monster" && card.name === "Ember Imp");
+    if (!voltBat || !cinderWall || !emberImp) throw new Error("Missing keyword fixtures");
+
+    expect(cardKeywordMarkup(voltBat)).toContain("FLYING");
+    expect(cardKeywordMarkup(cinderWall)).toContain("REACH");
+    expect(cardKeywordMarkup(emberImp)).toBe("");
   });
 });
 

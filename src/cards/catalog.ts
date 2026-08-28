@@ -1,5 +1,6 @@
 import type {
   BaseMonsterCard as CoreBaseMonsterCard,
+  BaseCreatureKeyword as CoreBaseCreatureKeyword,
   Element,
   FusionMonsterCard as CoreFusionMonsterCard,
   LandCard,
@@ -38,6 +39,7 @@ export type FusionMonsterId =
 
 export type SpellId = "bolt" | "destroy" | "draw" | "counterspell";
 export type FusionKeyword = "burst" | "slow";
+export type BaseCreatureKeyword = CoreBaseCreatureKeyword;
 
 export interface BaseMonsterDefinition
   extends Omit<CoreBaseMonsterCard, "instanceId"> {
@@ -85,15 +87,15 @@ export type DeckCard = LandCard | BaseMonsterCard | SpellCardInstance;
 
 export const BASE_MONSTERS = [
   baseMonster("ember-imp", "Ember Imp", "fire", 2, 1),
-  baseMonster("cinder-wall", "Cinder Wall", "fire", 1, 2),
+  baseMonster("cinder-wall", "Cinder Wall", "fire", 1, 2, "reach"),
   baseMonster("tide-serpent", "Tide Serpent", "water", 1, 2),
   baseMonster("reef-guardian", "Reef Guardian", "water", 1, 3),
   baseMonster("stone-bull", "Stone Bull", "earth", 2, 2),
-  baseMonster("moss-tortoise", "Moss Tortoise", "earth", 1, 3),
-  baseMonster("gale-hawk", "Gale Hawk", "air", 2, 1),
+  baseMonster("moss-tortoise", "Moss Tortoise", "earth", 1, 3, "reach"),
+  baseMonster("gale-hawk", "Gale Hawk", "air", 2, 1, "flying"),
   baseMonster("cloud-sprite", "Cloud Sprite", "air", 1, 2),
   baseMonster("spark-lynx", "Spark Lynx", "lightning", 2, 1),
-  baseMonster("volt-bat", "Volt Bat", "lightning", 1, 2),
+  baseMonster("volt-bat", "Volt Bat", "lightning", 1, 2, "flying"),
 ] as const satisfies readonly BaseMonsterDefinition[];
 
 export const FUSION_MONSTERS = [
@@ -244,6 +246,7 @@ function baseMonster(
   element: Element,
   attack: number,
   health: number,
+  keyword: BaseCreatureKeyword | null = null,
 ): BaseMonsterDefinition {
   return {
     id,
@@ -255,6 +258,7 @@ function baseMonster(
     health,
     level: 1,
     cost: 1,
+    keyword,
   };
 }
 

@@ -13,6 +13,8 @@ import {
 } from "./core";
 import {
   assignBlockers,
+  canBlock,
+  countLegalBlockers,
   declareAttackers,
   resolveCombat,
   type BlockAssignment,
@@ -108,6 +110,46 @@ describe("blocker assignments", () => {
         block(secondAttacker, firstBlocker),
       ]),
     ).toThrow("block only one attacker");
+  });
+
+  it("rejects a ground blocker against Flying and permits Flying or Reach", () => {
+    const flyingAttacker = permanent("volt-bat", "flying-attacker");
+    const groundBlocker = permanent("ember-imp", "ground-blocker");
+    const flyingBlocker = permanent("gale-hawk", "flying-blocker");
+    const reachBlocker = permanent("cinder-wall", "reach-blocker");
+    const state = combatState(
+      [flyingAttacker],
+      [groundBlocker, flyingBlocker, reachBlocker],
+    );
+    const declaration = declareAttackers(state, "player-1", [
+      flyingAttacker.card.instanceId,
+    ]);
+
+    expect(canBlock(flyingAttacker, groundBlocker)).toBe(false);
+    expect(canBlock(flyingAttacker, flyingBlocker)).toBe(true);
+    expect(canBlock(flyingAttacker, reachBlocker)).toBe(true);
+    expect(() => assignBlockers(state, "player-2", declaration, [
+      block(flyingAttacker, groundBlocker),
+    ])).toThrow("cannot block a Flying attacker");
+    expect(assignBlockers(state, "player-2", declaration, [
+      block(flyingAttacker, flyingBlocker),
+    ]).blocks).toHaveLength(1);
+    expect(assignBlockers(state, "player-2", declaration, [
+      block(flyingAttacker, reachBlocker),
+    ]).blocks).toHaveLength(1);
+  });
+
+  it("counts only legal blockers for mixed Flying and ground attacks", () => {
+    const flyingAttacker = permanent("volt-bat", "flying-attacker");
+    const groundAttacker = permanent("ember-imp", "ground-attacker");
+    const groundBlocker = permanent("reef-guardian", "ground-blocker");
+    const reachBlocker = permanent("moss-tortoise", "reach-blocker");
+
+    expect(countLegalBlockers(
+      [groundAttacker, flyingAttacker],
+      [groundBlocker, reachBlocker],
+    )).toBe(2);
+    expect(countLegalBlockers([flyingAttacker], [groundBlocker])).toBe(0);
   });
 });
 

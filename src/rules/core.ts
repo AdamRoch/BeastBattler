@@ -8,6 +8,7 @@ export const ELEMENTS = [
 
 export type Element = (typeof ELEMENTS)[number];
 export type PlayerId = "player-1" | "player-2";
+export type BaseCreatureKeyword = "flying" | "reach";
 export type TurnPhase = "draw" | "main" | "combat" | "end";
 export type MatchPhase = "mulligan" | TurnPhase;
 export type MulliganDecision = "pending" | "kept" | "mulliganed";
@@ -29,6 +30,7 @@ export interface BaseMonsterCard extends CardBase {
   readonly attack: number;
   readonly health: number;
   readonly level: 1;
+  readonly keyword: BaseCreatureKeyword | null;
 }
 
 export interface FusionMonsterCard extends CardBase {

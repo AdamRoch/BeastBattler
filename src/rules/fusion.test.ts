@@ -85,6 +85,23 @@ describe("fusion prompts and creation", () => {
     ]);
   });
 
+  it("does not transfer Flying or Reach from base parents to a fusion", () => {
+    const reachParent = basePermanent("cinder-wall", "reach-parent");
+    const flyingParent = basePermanent("gale-hawk", "flying-parent");
+    let state = mainPhaseState("fire-air", [reachParent, flyingParent]);
+
+    state = fuseMonsters(state, "player-1", [
+      reachParent.card.instanceId,
+      flyingParent.card.instanceId,
+    ]);
+    state = passResponse(state, "player-2");
+
+    expect(getPlayer(state, "player-1").monsters[0]?.card).toMatchObject({
+      name: "Wildfire Beast",
+      keyword: null,
+    });
+  });
+
   it("grants haste to normal fusions", () => {
     const fireParent = basePermanent("ember-imp", "fire-parent", true);
     const waterParent = basePermanent("tide-serpent", "water-parent", true);
