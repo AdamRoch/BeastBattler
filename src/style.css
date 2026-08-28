@@ -360,6 +360,13 @@ canvas {
   transform: translate(-50%, 0);
 }
 
+.archetype-card:hover,
+.archetype-card:focus-visible,
+.lobby-archetype-card:hover,
+.lobby-archetype-card:focus-visible {
+  z-index: 50;
+}
+
 .archetype-grid > :nth-child(5n + 1) .deck-preview,
 .lobby-archetype-grid > :nth-child(5n + 1) .deck-preview {
   left: 0;
