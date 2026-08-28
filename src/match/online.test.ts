@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { assembleDeck, deriveExtraDeck } from "../cards/catalog";
 import type { OnlineMatchSession } from "../lobby/online-lobby";
@@ -331,6 +331,7 @@ describe("OnlineMatchClient", () => {
     const socket = new TestSocket();
     socket.readyState = 1;
     const timers: Array<() => void> = [];
+    const announce = vi.fn();
     let returned = 0;
     const client = new OnlineMatchClient(lobbySession(socket), {
       arena: {} as never,
@@ -340,6 +341,7 @@ describe("OnlineMatchClient", () => {
         return timers.length;
       },
       cancel: () => {},
+      sfx: { announce } as never,
       onReturnToLobby: () => {
         returned += 1;
       },
@@ -358,6 +360,15 @@ describe("OnlineMatchClient", () => {
       reason: "forfeit",
     });
     expect(updates.at(-1)).toBe("Opponent forfeited. You win.");
+    expect(announce).toHaveBeenCalledWith("opponent-forfeited-you-win");
+    socket.receive({
+      type: "match.ended",
+      matchId: "match-1",
+      winner: "player-2",
+      loser: "player-1",
+      reason: "forfeit",
+    });
+    expect(announce).toHaveBeenCalledOnce();
     expect(returned).toBe(0);
     for (const fire of timers.splice(0)) fire();
     expect(returned).toBe(1);
