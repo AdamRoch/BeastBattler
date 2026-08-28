@@ -70,6 +70,46 @@ describe("procedural sound effects", () => {
     engine.dispose();
   });
 
+  it("loops background music, retries blocked autoplay, and follows master settings", async () => {
+    const music = {
+      loop: false,
+      preload: "none",
+      volume: 1,
+      play: vi.fn()
+        .mockRejectedValueOnce(new Error("Autoplay blocked"))
+        .mockResolvedValue(undefined),
+      pause: vi.fn(),
+    };
+    const factory = vi.fn(() => music);
+    const engine = createSfxEngine({
+      audioContextFactory: fakeAudioContext,
+      backgroundMusicFactory: factory,
+      storage: null,
+    });
+
+    await expect(engine.startMusic()).resolves.toBe(false);
+    expect(factory).toHaveBeenCalledWith("/audio/background-music.mp3");
+    expect(music).toMatchObject({
+      loop: true,
+      preload: "auto",
+      volume: 0.0512,
+    });
+
+    await expect(engine.unlock()).resolves.toBe(true);
+    expect(music.play).toHaveBeenCalledTimes(2);
+    expect(engine.getDebugState().musicPlaying).toBe(true);
+
+    engine.setVolume(0.5);
+    expect(music.volume).toBeCloseTo(0.08);
+    engine.setMuted(true);
+    expect(music.volume).toBe(0);
+    engine.setMuted(false);
+    expect(music.volume).toBeCloseTo(0.08);
+
+    engine.dispose();
+    expect(music.pause).toHaveBeenCalledOnce();
+  });
+
   it("calls the monster name, then schedules the warp through the SFX engine", async () => {
     const spoken: SpeechSynthesisUtterance[] = [];
     const engine = createSfxEngine({

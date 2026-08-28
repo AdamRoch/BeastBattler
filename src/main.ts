@@ -34,6 +34,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 app.append(renderer.domElement);
 const sfx = createSfxEngine();
+void sfx.startMusic();
 if (import.meta.env.DEV) {
   Object.assign(window, { __beastBattlerSfx: sfx });
 }

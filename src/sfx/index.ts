@@ -32,10 +32,12 @@ export interface SfxDebugState extends SfxSettings {
   readonly contextState: AudioContextState | "uninitialized";
   readonly effectCounts: Readonly<Record<SfxEffect, number>>;
   readonly initialized: boolean;
+  readonly musicPlaying: boolean;
 }
 
 export interface SfxEngine {
   unlock(): Promise<boolean>;
+  startMusic(): Promise<boolean>;
   play(effect: SfxEffect): void;
   announceSummon(
     monsterName: string,
@@ -54,13 +56,25 @@ export interface SfxEngine {
 
 export interface SfxEngineOptions {
   readonly audioContextFactory?: () => AudioContext;
+  readonly backgroundMusicFactory?: (source: string) => BackgroundMusicElement | null;
+  readonly backgroundMusicSource?: string | null;
   readonly storage?: Pick<Storage, "getItem" | "setItem"> | null;
   readonly speechSynthesis?: Pick<SpeechSynthesis, "cancel" | "speak"> | null;
   readonly speechUtteranceFactory?: (text: string) => SpeechSynthesisUtterance;
 }
 
+interface BackgroundMusicElement {
+  loop: boolean;
+  preload: string;
+  volume: number;
+  play(): Promise<void>;
+  pause(): void;
+}
+
 const STORAGE_KEY = "beast-battler:sfx:v1";
 const DEFAULT_SETTINGS: SfxSettings = { muted: false, volume: 0.32 };
+const BACKGROUND_MUSIC_SOURCE = "/audio/background-music.mp3";
+const BACKGROUND_MUSIC_GAIN = 0.16;
 const SILENCE = 0.0001;
 const ANNOUNCER_PITCH = 0.62;
 const ANNOUNCER_RATE = 0.82;
@@ -127,6 +141,10 @@ export function createSfxEngine(
     ? browserStorage()
     : options.storage;
   const contextFactory = options.audioContextFactory ?? createBrowserAudioContext;
+  const backgroundMusicFactory = options.backgroundMusicFactory ?? createBrowserBackgroundMusic;
+  const backgroundMusicSource = options.backgroundMusicSource === undefined
+    ? BACKGROUND_MUSIC_SOURCE
+    : options.backgroundMusicSource;
   const speech = options.speechSynthesis === undefined
     ? browserSpeechSynthesis()
     : options.speechSynthesis;
@@ -140,6 +158,9 @@ export function createSfxEngine(
   let context: AudioContext | null = null;
   let masterGain: GainNode | null = null;
   let ambientGain: GainNode | null = null;
+  let backgroundMusic: BackgroundMusicElement | null | undefined;
+  let musicPlaying = false;
+  let musicRequest: Promise<boolean> | null = null;
   let ambientMonsterCount = 0;
   let disposed = false;
   let activeAnnouncements = 0;
@@ -152,15 +173,62 @@ export function createSfxEngine(
     if (disposed) {
       return false;
     }
+    const musicStart = startMusic();
+    let contextReady = false;
     try {
       ensureContext();
       if (context?.state === "suspended") {
         await context.resume();
       }
-      return context?.state === "running";
+      contextReady = context?.state === "running";
     } catch {
-      return false;
+      contextReady = false;
     }
+    return contextReady || await musicStart;
+  }
+
+  function startMusic(): Promise<boolean> {
+    if (disposed || musicPlaying) {
+      return Promise.resolve(musicPlaying);
+    }
+    if (musicRequest) {
+      return musicRequest;
+    }
+    const audio = getBackgroundMusic();
+    if (!audio) {
+      return Promise.resolve(false);
+    }
+
+    audio.volume = backgroundMusicVolume();
+    musicRequest = Promise.resolve(audio.play())
+      .then(() => {
+        if (disposed) {
+          audio.pause();
+          return false;
+        }
+        musicPlaying = true;
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        musicRequest = null;
+      });
+    return musicRequest;
+  }
+
+  function getBackgroundMusic(): BackgroundMusicElement | null {
+    if (backgroundMusic !== undefined) {
+      return backgroundMusic;
+    }
+    backgroundMusic = backgroundMusicSource
+      ? backgroundMusicFactory(backgroundMusicSource)
+      : null;
+    if (backgroundMusic) {
+      backgroundMusic.loop = true;
+      backgroundMusic.preload = "auto";
+      backgroundMusic.volume = backgroundMusicVolume();
+    }
+    return backgroundMusic;
   }
 
   function ensureContext(): void {
@@ -434,6 +502,9 @@ export function createSfxEngine(
         0.025,
       );
     }
+    if (backgroundMusic) {
+      backgroundMusic.volume = backgroundMusicVolume();
+    }
     try {
       storage?.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch {
@@ -448,6 +519,10 @@ export function createSfxEngine(
     return settings.muted ? 0 : settings.volume;
   }
 
+  function backgroundMusicVolume(): number {
+    return effectiveVolume() * BACKGROUND_MUSIC_GAIN;
+  }
+
   function getDebugState(): SfxDebugState {
     return {
       ...settings,
@@ -455,6 +530,7 @@ export function createSfxEngine(
       contextState: context?.state ?? "uninitialized",
       effectCounts: { ...effectCounts },
       initialized: context !== null,
+      musicPlaying,
     };
   }
 
@@ -465,6 +541,10 @@ export function createSfxEngine(
       activeAnnouncements = 0;
       speech?.cancel();
     }
+    backgroundMusic?.pause();
+    backgroundMusic = null;
+    musicPlaying = false;
+    musicRequest = null;
     if (context && context.state !== "closed") {
       void context.close().catch(() => undefined);
     }
@@ -475,6 +555,7 @@ export function createSfxEngine(
 
   return {
     unlock,
+    startMusic,
     play,
     announceSummon,
     playLpTicks,
@@ -601,6 +682,14 @@ function browserStorage(): Pick<Storage, "getItem" | "setItem"> | null {
 function browserSpeechSynthesis(): Pick<SpeechSynthesis, "cancel" | "speak"> | null {
   try {
     return globalThis.speechSynthesis ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function createBrowserBackgroundMusic(source: string): HTMLAudioElement | null {
+  try {
+    return globalThis.Audio ? new globalThis.Audio(source) : null;
   } catch {
     return null;
   }
