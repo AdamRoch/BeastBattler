@@ -114,6 +114,11 @@ import {
 } from "./announcer-events";
 import type { AnnouncerLine } from "../sfx/announcer";
 import type { SfxEngine } from "../sfx";
+import {
+  AiPresentationQueue,
+  buildAiPresentation,
+  type AiPresentationBeat,
+} from "./ai-presentation";
 
 const HUMAN: PlayerId = "player-1";
 const AI: PlayerId = "player-2";
@@ -243,6 +248,7 @@ export function mountMatch(
   let dismissedFusionKey = "";
   let notice = "Choose Keep or Mulligan to begin.";
   let aiTimer: number | undefined;
+  let aiPresentationActive = false;
   let emptyCombatTimer: number | undefined;
   let disposed = false;
   let completionReported = false;
@@ -268,6 +274,7 @@ export function mountMatch(
   const pendingFusionSources = new Map<string, readonly [string, string]>();
   const pendingFusionReveals = new Map<string, FusionRevealData>();
   const announcementDeduper = createAnnouncementDeduper();
+  const aiPresentation = new AiPresentationQueue(window);
   const summonTip = createSummonTipTracker();
   const coachMarks = createCoachMarkTracker();
   let unsubscribeOnline = () => {};
@@ -407,16 +414,16 @@ export function mountMatch(
           <p class="notice${shouldSkipEmptyCombat() ? " is-empty-combat" : ""}" role="status">${handIsPrivate ? "Pass the device to continue." : notice}</p>
           ${handIsPrivate ? "" : phaseGuidance(local)}
         </div>
-        ${handIsPrivate ? "" : phaseActions(local)}
+        ${handIsPrivate ? "" : aiPresentationActive ? '<button class="primary-action" disabled>AI ACTING</button>' : phaseActions(local)}
       </section>
 
       ${!handIsPrivate && state.phase === "mulligan" && local.mulliganDecision === "pending" ? mulliganPrompt(local.hand) : ""}
-      ${!handIsPrivate && showFusionPrompt ? fusionPrompt(fusionOptions) : ""}
-      ${!handIsPrivate && upgradeOptions.length > 0 ? upgradePrompt(upgradeOptions) : ""}
-      ${!handIsPrivate && pendingTarget ? targetingPrompt(pendingTarget) : ""}
-      ${!handIsPrivate && state.responsePlayer === localId ? responsePrompt(state) : ""}
-      ${!handIsPrivate && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
-      ${!handIsPrivate && state.result && !options.onComplete ? resultPrompt(state) : ""}
+      ${!handIsPrivate && !aiPresentationActive && showFusionPrompt ? fusionPrompt(fusionOptions) : ""}
+      ${!handIsPrivate && !aiPresentationActive && upgradeOptions.length > 0 ? upgradePrompt(upgradeOptions) : ""}
+      ${!handIsPrivate && !aiPresentationActive && pendingTarget ? targetingPrompt(pendingTarget) : ""}
+      ${!handIsPrivate && !aiPresentationActive && state.responsePlayer === localId ? responsePrompt(state) : ""}
+      ${!handIsPrivate && !aiPresentationActive && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
+      ${!handIsPrivate && !aiPresentationActive && state.result && !options.onComplete ? resultPrompt(state) : ""}
       ${summonTipVisible ? '<aside class="summon-tip" data-testid="summon-tip" role="status">Lv1 creatures can\'t attack on their first turn.</aside>' : ""}
       ${coachMark ? coachMarkMarkup(coachMark) : ""}
       ${privacyCurtainMarkup(privacyCurtain)}
@@ -425,7 +432,7 @@ export function mountMatch(
 
     startNextDrawAnimation();
 
-    if (state.result && options.onComplete && !completionReported) {
+    if (state.result && options.onComplete && !completionReported && !aiPresentationActive) {
       completionReported = true;
       options.onComplete(state.result);
     }
@@ -1248,7 +1255,7 @@ export function mountMatch(
   }
 
   function scheduleAi(): void {
-    if (mode !== "ai" || disposed || state.result || state.phase === "mulligan") {
+    if (mode !== "ai" || disposed || aiPresentationActive || state.result || state.phase === "mulligan") {
       return;
     }
     if (state.responsePlayer !== AI && state.activePlayer !== AI) {
@@ -1272,24 +1279,43 @@ export function mountMatch(
     if (oldStack.length > 0 && result.actions.some((action) => action.kind === "pass-response")) {
       animateStackResolution(oldStack, state);
     }
-    animateAiImmediateActions(before, result.actions);
     syncScene(before, state);
     showUpgradeReveals(before, state);
+    aiPresentationActive = result.actions.length > 0;
+    aiPresentation.play(
+      buildAiPresentation(before, result),
+      (beat) => presentAiBeat(before, beat),
+      () => finishAiPresentation(result),
+    );
+  }
 
+  function presentAiBeat(before: MatchState, beat: AiPresentationBeat): void {
+    if (disposed) return;
+    notice = beat.message;
+    animateAiImmediateActions(before, [beat.action]);
+    render();
+  }
+
+  function finishAiPresentation(result: ReturnType<typeof runAiTurn>): void {
+    if (disposed) return;
+    aiPresentationActive = false;
     if (result.attackDeclaration) {
       pendingAttack = result.attackDeclaration;
-      notice = "The AI declared attackers. Choose your blocks.";
+      notice = "Choose blockers for the AI's attack.";
     } else if (result.waitingFor === "empty-combat") {
-      notice = "No attack...";
+      notice = "The AI has no ready attackers.";
     } else if (result.waitingFor === "opponent-response") {
       notice = "You have priority. Counter the pending action or pass.";
     } else if (result.waitingFor === "turn-complete") {
       notice = "Your turn. Main phase is ready.";
-    } else {
-      notice = aiActionSummary(result.actions);
     }
     render();
     scheduleEmptyCombatSkip();
+  }
+
+  function clearAiPresentation(): void {
+    aiPresentation.clear();
+    aiPresentationActive = false;
   }
 
   function registerAiFusionActions(
@@ -2242,6 +2268,7 @@ export function mountMatch(
           return;
         }
         clearAnimationTimers();
+        clearAiPresentation();
         interruptDrawAnimations();
         for (const id of [...sceneIds]) {
           arena.removeMonster(id);
@@ -2324,6 +2351,7 @@ export function mountMatch(
     dispose() {
       disposed = true;
       window.clearTimeout(aiTimer);
+      clearAiPresentation();
       window.clearTimeout(emptyCombatTimer);
       window.clearTimeout(summonTipTimer);
       window.clearTimeout(coachMarkTimer);
@@ -2568,35 +2596,4 @@ function wasMonsterDestroyed(
     player.discardPile.some((card) => card.instanceId === monsterId),
   );
   return existed && discarded;
-}
-
-function aiActionSummary(actions: readonly AiAction[]): string {
-  const last = actions.at(-1);
-  if (!last) {
-    return "Waiting for the AI.";
-  }
-  switch (last.kind) {
-    case "play-land":
-      return "The AI played a land.";
-    case "summon":
-      return "The AI summoned a monster. You may respond.";
-    case "fuse":
-      return "The AI started a fusion summon. You may respond.";
-    case "upgrade-fusion":
-      return "The AI upgraded a fusion to ★3.";
-    case "cast-spell":
-      return `The AI cast ${last.spellId}.`;
-    case "counterspell":
-      return "The AI cast Counterspell.";
-    case "pass-response":
-      return "The AI passed priority.";
-    case "attack":
-      return "The AI declared attackers.";
-    case "hold-attack":
-      return "The AI held its attackers.";
-    case "discard":
-      return "The AI discarded to seven cards.";
-    case "advance-phase":
-      return "The AI advanced the phase.";
-  }
 }
