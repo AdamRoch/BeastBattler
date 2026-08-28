@@ -1,12 +1,39 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as THREE from "three";
 
 import {
   assembleDeck,
   deriveExtraDeck,
   type BaseMonsterCard,
 } from "../cards/catalog";
-import type { PendingStackItem } from "../rules/core";
-import { createFusionUpgradeOption, responseWindowMessage } from "./controller";
+import { createArenaScene } from "../arena";
+import {
+  createMatch,
+  getPlayer,
+  type LandCard,
+  type LandPermanent,
+  type MatchState,
+  type MonsterPermanent,
+  type PendingStackItem,
+  type PlayerId,
+} from "../rules/core";
+import {
+  createFusionUpgradeOption,
+  mountMatch,
+  responseWindowMessage,
+} from "./controller";
+
+vi.mock("../card-art", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../card-art")>();
+  return {
+    ...actual,
+    createCardArtRenderer: () => ({
+      render: () => "data:image/png;base64,",
+      dispose: () => {},
+    }),
+  };
+});
 
 describe("response window messages", () => {
   it("attributes spells, summons, and fusions to the opponent", () => {
@@ -57,6 +84,95 @@ describe("fusion upgrade prompt options", () => {
   });
 });
 
+describe("VS AI arena reconciliation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it("places the human Moss Tortoise after the AI resolves its response", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const arena = createArenaScene(16 / 9);
+    const controller = mountMatch(root, arena, {
+      mode: "ai",
+      playerOneArchetype: "fire-earth",
+      initialState: humanMossTortoiseSummonState(),
+    });
+
+    click(root, '[data-card-id="summon-moss-tortoise"]');
+    expect(controller.getState().responsePlayer).toBe("player-2");
+
+    // A delayed retirement can leave a renderer-only object in the final
+    // player slot while rules still permits this summon.
+    arena.placeMonster(
+      "retired-player-animation-object",
+      { side: "player", slot: 2 },
+      new THREE.Group(),
+    );
+
+    vi.advanceTimersByTime(360);
+
+    const moss = getPlayer(controller.getState(), "player-1").monsters.find(
+      (monster) => monster.card.instanceId === "summon-moss-tortoise",
+    );
+    expect(moss?.card.name).toBe("Moss Tortoise");
+    const arenaMoss = arena.getMonster(moss?.card.instanceId ?? "");
+    expect(arenaMoss?.userData.monsterId).toBe(moss?.card.instanceId);
+    expect(
+      arenaMoss?.getObjectByName("summoning-sickness-indicator"),
+    ).toBeTruthy();
+    expect(arena.getMonster("retired-player-animation-object")).toBeUndefined();
+
+    controller.dispose();
+  });
+
+  it.each([
+    ["Moss Tortoise", "moss-tortoise"],
+    ["Stone Bull", "stone-bull"],
+  ])(
+    "places a resolved AI %s after clearing a retired object from its last slot",
+    (name, cardId) => {
+      vi.useFakeTimers();
+      const root = document.createElement("div");
+      document.body.append(root);
+      const arena = createArenaScene(16 / 9);
+      const controller = mountMatch(root, arena, {
+        mode: "ai",
+        initialState: aiSummonState(cardId),
+      });
+
+      vi.advanceTimersByTime(360);
+      expect(controller.getState().responsePlayer).toBe("player-1");
+
+      // This mirrors a retired animation object that has survived its rules
+      // permanent and would have made the old firstOpenSlot() path silently
+      // skip the resolved summon.
+      arena.placeMonster(
+        "retired-animation-object",
+        { side: "opponent", slot: 2 },
+        new THREE.Group(),
+      );
+
+      click(root, '[data-action="pass-response"]');
+
+      const summoned = getPlayer(controller.getState(), "player-2").monsters.find(
+        (monster) => monster.card.instanceId === `summon-${cardId}`,
+      );
+      expect(summoned?.card.name).toBe(name);
+      const arenaMonster = arena.getMonster(summoned?.card.instanceId ?? "");
+      expect(arenaMonster).toBeTruthy();
+      expect(
+        arenaMonster?.getObjectByName("summoning-sickness-indicator"),
+      ).toBeTruthy();
+      expect(arena.getMonster("retired-animation-object")).toBeUndefined();
+
+      controller.dispose();
+    },
+  );
+});
+
 function pendingSpell(controller: "player-1" | "player-2" = "player-2"): PendingStackItem {
   const card = assembleDeck("fire-water").find(
     (candidate) => candidate.kind === "spell" && candidate.id === "bolt",
@@ -95,4 +211,126 @@ function pendingFusion(): PendingStackItem {
     card,
     parentNames: ["Ember Imp", "Tide Serpent"],
   };
+}
+
+function aiSummonState(cardId: string): MatchState {
+  const deck = assembleDeck("earth-lightning");
+  const summonCard = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === cardId,
+  );
+  const stoneBull = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "stone-bull",
+  );
+  const sparkLynx = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "spark-lynx",
+  );
+  const earthLand = deck.find(
+    (candidate): candidate is LandCard =>
+      candidate.kind === "land" && candidate.element === "earth",
+  );
+  if (!summonCard || !stoneBull || !sparkLynx || !earthLand) {
+    throw new Error("Missing deterministic AI summon fixtures");
+  }
+
+  const state = createMatch({
+    playerOneDeck: assembleDeck("fire-water"),
+    playerTwoDeck: deck,
+    playerOneExtraDeck: deriveExtraDeck("fire-water"),
+    playerTwoExtraDeck: deriveExtraDeck("earth-lightning"),
+    firstPlayer: "player-2",
+  });
+  return withPlayer({ ...state, activePlayer: "player-2", phase: "main", turnNumber: 5 }, "player-2", {
+    hand: [{ ...summonCard, instanceId: `summon-${cardId}` }],
+    lands: [readyLand(earthLand, "earth-land-1")],
+    monsters: [
+      permanent(stoneBull, "ai-stone-bull"),
+      permanent(sparkLynx, "ai-spark-lynx"),
+    ],
+    landPlayedThisTurn: true,
+  });
+}
+
+function humanMossTortoiseSummonState(): MatchState {
+  const deck = assembleDeck("fire-earth");
+  const mossTortoise = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "moss-tortoise",
+  );
+  const cinderWall = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "cinder-wall",
+  );
+  const stoneBull = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "stone-bull",
+  );
+  const earthLand = deck.find(
+    (candidate): candidate is LandCard =>
+      candidate.kind === "land" && candidate.element === "earth",
+  );
+  if (!mossTortoise || !cinderWall || !stoneBull || !earthLand) {
+    throw new Error("Missing deterministic human Moss Tortoise fixtures");
+  }
+
+  const state = createMatch({
+    playerOneDeck: deck,
+    playerTwoDeck: assembleDeck("earth-lightning"),
+    playerOneExtraDeck: deriveExtraDeck("fire-earth"),
+    playerTwoExtraDeck: deriveExtraDeck("earth-lightning"),
+    firstPlayer: "player-1",
+  });
+  return withPlayer({ ...state, activePlayer: "player-1", phase: "main", turnNumber: 5 }, "player-1", {
+    hand: [{ ...mossTortoise, instanceId: "summon-moss-tortoise" }],
+    lands: [readyLand(earthLand, "human-earth-land-1")],
+    monsters: [
+      permanent(cinderWall, "human-cinder-wall"),
+      permanent(stoneBull, "human-stone-bull"),
+    ],
+    landPlayedThisTurn: true,
+  });
+}
+
+function withPlayer(
+  state: MatchState,
+  playerId: PlayerId,
+  updates: Partial<MatchState["players"][number]>,
+): MatchState {
+  const index = playerId === "player-1" ? 0 : 1;
+  const players = [...state.players] as [MatchState["players"][0], MatchState["players"][1]];
+  players[index] = { ...players[index], ...updates };
+  return { ...state, players };
+}
+
+function readyLand(card: LandCard, instanceId: string): LandPermanent {
+  return { card: { ...card, instanceId }, ready: true };
+}
+
+function permanent(card: BaseMonsterCard, instanceId: string): MonsterPermanent {
+  return {
+    card: { ...card, instanceId },
+    damage: 0,
+    summonedOnTurn: 1,
+    summoningSick: false,
+  };
+}
+
+function click(root: HTMLElement, selector: string): void {
+  const button = root.querySelector<HTMLElement>(selector);
+  if (!button) throw new Error(`Missing ${selector}`);
+  button.click();
 }

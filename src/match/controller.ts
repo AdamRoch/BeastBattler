@@ -178,6 +178,11 @@ export interface MatchControllerOptions {
   readonly mode?: MatchMode | "online";
   readonly playerOneArchetype?: ArchetypeId;
   readonly playerTwoArchetype?: ArchetypeId;
+  /**
+   * Provides a deterministic local match snapshot for integration tests and
+   * playtest tooling. Online matches always use their authoritative adapter.
+   */
+  readonly initialState?: MatchState;
   readonly onComplete?: (result: MatchResult) => void;
   readonly sfx?: SfxEngine;
   readonly online?: OnlineMatchAdapter;
@@ -212,7 +217,7 @@ export function mountMatch(
     "player-1": deriveExtraDeck(playerOneArchetype),
     "player-2": deriveExtraDeck(playerTwoArchetype),
   };
-  let state = online?.getState() ?? newMatch();
+  let state = online?.getState() ?? options.initialState ?? newMatch();
   let viewingPlayer: PlayerId = HUMAN;
   let privacyCurtain: PrivacyCurtainRequest | null = mode === "hotseat"
     ? { playerId: HUMAN, reason: "turn" }
@@ -1344,6 +1349,8 @@ export function mountMatch(
     const nextMonsters = allMonsters(after);
     const nextIds = new Set(nextMonsters.map((entry) => entry.monster.card.instanceId));
 
+    reconcileArenaOccupancy(nextIds);
+
     if (summonTip.shouldShow(before, after, localPlayerId())) {
       showSummonTip();
     }
@@ -1366,7 +1373,9 @@ export function mountMatch(
       }
       const slot = firstOpenSlot(entry.side);
       if (slot === null) {
-        continue;
+        throw new Error(
+          `Arena reconciliation failed: no ${entry.side} slot for legal monster ${id}`,
+        );
       }
       arena.placeMonster(
         id,
@@ -1377,6 +1386,42 @@ export function mountMatch(
       arena.setMonsterSummoningSickness(id, summoningSick);
       options.sfx?.announceSummon(entry.monster.card.name, "summon");
       arena.dispatchAnimation({ type: "summon", monsterId: id });
+    }
+  }
+
+  /**
+   * Animation cleanup may leave an object alive briefly after rules retire its
+   * permanent. Such objects must not reserve a live board slot for the next
+   * resolved summon. Treat MatchState as the authority and repair the local
+   * registry before placing anything new.
+   */
+  function reconcileArenaOccupancy(nextIds: ReadonlySet<string>): void {
+    for (const side of ["player", "opponent"] as const) {
+      for (const slot of [0, 1, 2] as const) {
+        const object = arena.getMonsterAt({ side, slot });
+        if (!object) {
+          continue;
+        }
+        const monsterId = object.userData.monsterId;
+        if (typeof monsterId !== "string" || !nextIds.has(monsterId)) {
+          if (typeof monsterId !== "string") {
+            throw new Error(
+              `Arena reconciliation failed: ${side}:${slot} has an unnamed monster object`,
+            );
+          }
+          arena.removeMonster(monsterId);
+          sceneIds.delete(monsterId);
+          retainedSceneIds.delete(monsterId);
+          continue;
+        }
+        sceneIds.add(monsterId);
+      }
+    }
+
+    for (const monsterId of [...sceneIds]) {
+      if (!arena.getMonster(monsterId)) {
+        sceneIds.delete(monsterId);
+      }
     }
   }
 
@@ -2035,6 +2080,7 @@ export function mountMatch(
     }),
   );
   render();
+  scheduleAi();
 
   return {
     getState: () => state,
