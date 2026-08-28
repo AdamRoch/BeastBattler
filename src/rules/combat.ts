@@ -143,9 +143,13 @@ export function resolveCombat(
     const blocker = findMonster(defendingPlayer, blockerId, "blocker");
     damageToBlockers.set(blockerId, attacker.card.attack);
     damageToAttackers.set(attackerId, blocker.card.attack);
+    const blockerRemainingHealth = Math.max(
+      0,
+      blocker.card.health - blocker.damage,
+    );
     damageToDefendingPlayer += Math.max(
       0,
-      attacker.card.attack - blocker.card.health,
+      attacker.card.attack - blockerRemainingHealth,
     );
   }
 

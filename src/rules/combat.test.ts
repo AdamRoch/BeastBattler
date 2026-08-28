@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BASE_MONSTERS, assembleDeck } from "../cards/catalog";
+import { BASE_MONSTERS, FUSION_MONSTERS, assembleDeck } from "../cards/catalog";
 import {
   advancePhase,
   createMatch,
@@ -194,6 +194,46 @@ describe("combat damage", () => {
     ).toBe(blocker.card.instanceId);
   });
 
+  it("uses a blocker's remaining health to calculate trample", () => {
+    const attacker = permanent("inferno-beast", "attacker");
+    const blocker = {
+      ...permanent("tsunami-beast", "blocker"),
+      damage: 3,
+    };
+    const state = combatState([attacker], [blocker]);
+    const declaration = declareAttackers(state, "player-1", [
+      attacker.card.instanceId,
+    ]);
+    const plan = assignBlockers(state, "player-2", declaration, [
+      block(attacker, blocker),
+    ]);
+
+    const resolved = resolveCombat(state, plan);
+
+    expect(getPlayer(resolved, "player-2").life).toBe(8);
+    expect(getPlayer(resolved, "player-2").monsters).toEqual([]);
+  });
+
+  it("does not trample when attack exactly equals a blocker's remaining health", () => {
+    const attacker = permanent("ember-imp", "attacker");
+    const blocker = {
+      ...permanent("golem-beast", "blocker"),
+      damage: 3,
+    };
+    const state = combatState([attacker], [blocker]);
+    const declaration = declareAttackers(state, "player-1", [
+      attacker.card.instanceId,
+    ]);
+    const plan = assignBlockers(state, "player-2", declaration, [
+      block(attacker, blocker),
+    ]);
+
+    const resolved = resolveCombat(state, plan);
+
+    expect(getPlayer(resolved, "player-2").life).toBe(10);
+    expect(getPlayer(resolved, "player-2").monsters).toEqual([]);
+  });
+
   it("keeps survivor damage until end of turn, then clears it", () => {
     const attacker = permanent("cinder-wall", "attacker");
     const blocker = permanent("cloud-sprite", "blocker");
@@ -269,11 +309,15 @@ function combatState(
 }
 
 function permanent(
-  cardId: (typeof BASE_MONSTERS)[number]["id"],
+  cardId:
+    | (typeof BASE_MONSTERS)[number]["id"]
+    | (typeof FUSION_MONSTERS)[number]["id"],
   instanceId: string,
   summoningSick = false,
 ): MonsterPermanent {
-  const definition = BASE_MONSTERS.find((card) => card.id === cardId);
+  const definition = [...BASE_MONSTERS, ...FUSION_MONSTERS].find(
+    (card) => card.id === cardId,
+  );
   if (!definition) {
     throw new Error(`Missing test card: ${cardId}`);
   }
