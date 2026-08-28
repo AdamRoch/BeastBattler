@@ -110,7 +110,14 @@ export type ServerMessage =
   | Readonly<{ type: "welcome"; version: typeof PROTOCOL_VERSION; reconnectToken: ReconnectToken; displayName: string }>
   | Readonly<{ type: "lobby.snapshot"; matches: readonly LobbyMatch[] }>
   | Readonly<{ type: "match.waiting"; match: LobbyMatch }>
-  | Readonly<{ type: "match.started"; matchId: MatchId; playerId: PlayerId; opponentName: string }>
+  | Readonly<{
+      type: "match.started";
+      matchId: MatchId;
+      playerId: PlayerId;
+      opponentName: string;
+      playerArchetype: ArchetypeId;
+      opponentArchetype: ArchetypeId;
+    }>
   | Readonly<{ type: "match.state"; matchId: MatchId; state: FilteredMatchState }>
   | Readonly<{ type: "match.paused"; matchId: MatchId; disconnectedPlayer: PlayerId; reconnectDeadline: number; remainingMs: number }>
   | Readonly<{ type: "match.resumed"; matchId: MatchId }>

@@ -38,7 +38,8 @@ export interface OnlineMatchSession {
   readonly matchId: MatchId;
   readonly playerId: PlayerId;
   readonly opponentName: string;
-  readonly playerArchetype?: ArchetypeId;
+  readonly playerArchetype: ArchetypeId;
+  readonly opponentArchetype: ArchetypeId;
 }
 
 export interface OnlineLobbyOptions {
@@ -266,7 +267,8 @@ export function mountOnlineLobby(
           matchId: message.matchId,
           playerId: message.playerId,
           opponentName: message.opponentName,
-          playerArchetype: selectedArchetype ?? undefined,
+          playerArchetype: message.playerArchetype,
+          opponentArchetype: message.opponentArchetype,
         });
         dispose(false);
         return;

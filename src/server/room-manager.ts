@@ -481,7 +481,15 @@ export class RoomManager {
   private sendMatchStarted(room: Room): void {
     for (const seat of room.seats) {
       if (!seat) continue;
-      this.sendByToken(seat.token, { type: "match.started", matchId: room.id, playerId: seat.playerId, opponentName: this.opponentSeat(room, seat.playerId).displayName });
+      const opponent = this.opponentSeat(room, seat.playerId);
+      this.sendByToken(seat.token, {
+        type: "match.started",
+        matchId: room.id,
+        playerId: seat.playerId,
+        opponentName: opponent.displayName,
+        playerArchetype: seat.archetype,
+        opponentArchetype: opponent.archetype,
+      });
     }
   }
 
