@@ -23,7 +23,7 @@ import {
   playLand,
   summonMonster,
   takeMulligan,
-  type Element,
+  type Element as CardElement,
   type FusionMonsterCard,
   type GameCard,
   type MatchState,
@@ -95,6 +95,7 @@ import {
   type PrivacyCurtainReason,
   type PrivacyCurtainRequest,
 } from "./privacy-curtain";
+import { createTargetPreview } from "./target-preview";
 import {
   installPhaseAdvanceShortcut,
   phaseAdvanceButton,
@@ -123,6 +124,7 @@ const SUMMON_TIP_DURATION_MS = 2_000;
 const DRAW_ANIMATION_DURATION_MS = 400;
 const DRAW_HIGHLIGHT_DURATION_MS = 1_000;
 const COACH_MARK_DURATION_MS = 4_000;
+export const TARGETING_TIMEOUT_MS = 15_000;
 
 interface PendingTarget {
   readonly cardId: string;
@@ -217,6 +219,7 @@ export function mountMatch(
   const arenaCanvas = root.querySelector<HTMLCanvasElement>("canvas");
   const monsterTooltip = createMonsterTooltip(root);
   const spellTooltip = createSpellTooltip(root);
+  const targetPreview = createTargetPreview(root);
   const drawLayer = document.createElement("div");
   drawLayer.className = "draw-animation-layer";
   drawLayer.setAttribute("aria-hidden", "true");
@@ -235,6 +238,7 @@ export function mountMatch(
   let selectedAttackers = new Set<string>();
   let pendingTarget: PendingTarget | null = null;
   let targetConfirmation: SpellTarget | null = null;
+  let targetingTimer: number | undefined;
   let pendingAttack: AttackDeclaration | null = null;
   let dismissedFusionKey = "";
   let notice = "Choose Keep or Mulligan to begin.";
@@ -300,8 +304,7 @@ export function mountMatch(
     }
     viewingPlayer = playerId;
     selectedAttackers.clear();
-    pendingTarget = null;
-    targetConfirmation = null;
+    clearTargetingState();
     privacyCurtain = { playerId, reason };
     options.sfx?.play("curtain");
   }
@@ -319,6 +322,7 @@ export function mountMatch(
   function render(): void {
     hideMonsterTooltip();
     hideSpellTooltip();
+    targetPreview.hide();
     drawQueue.enqueueTransition(renderedState, state);
     renderedState = state;
     syncMatchSfx();
@@ -346,7 +350,7 @@ export function mountMatch(
 
     hud.innerHTML = `
       <header class="match-topbar">
-        <section class="life-panel life-player" data-testid="player-life">
+        <section class="life-panel life-player" data-testid="player-life" data-player-id="${HUMAN}">
           <span class="life-label">${mode === "hotseat" ? "PLAYER 1" : "YOU"}</span>
           <strong>${playerOne.life}</strong>
           <small>LP</small>
@@ -356,7 +360,7 @@ export function mountMatch(
           <strong>${phaseLabel(state)}</strong>
           <small>${mode === "hotseat" ? `PLAYER ${priorityPlayer === HUMAN ? 1 : 2} PRIORITY` : state.activePlayer === HUMAN ? "YOUR PRIORITY" : "OPPONENT PRIORITY"}</small>
         </section>
-        <section class="life-panel life-opponent" data-testid="opponent-life">
+        <section class="life-panel life-opponent" data-testid="opponent-life" data-player-id="${AI}">
           <span class="life-label">${mode === "hotseat" ? "PLAYER 2" : mode === "online" ? "OPPONENT" : "AI"}</span>
           <strong>${playerTwo.life}</strong>
           <small>LP</small>
@@ -849,10 +853,11 @@ export function mountMatch(
     const targetClass = (targetOwner: PlayerId, isLethal = false): string =>
       [
         "target-option",
+        targetOwner === localId ? "is-friendly-target" : "",
         isRecommendedTarget(card.effect, localId, targetOwner)
           ? "is-recommended-target"
           : "",
-        isLethal ? "is-lethal-target" : "",
+        isLethal && targetOwner !== localId ? "is-lethal-target" : "",
       ].filter(Boolean).join(" ");
     const playerTargets = damageAmount !== null
       ? `
@@ -865,6 +870,7 @@ export function mountMatch(
       <section class="floating-prompt targeting-prompt" data-testid="targeting-prompt">
         <span class="eyebrow spell-tooltip-trigger" data-spell-tooltip-id="${card.id}">${target.spellId.toUpperCase()}</span>
         <h2>${damageAmount === null ? "Choose a target" : `${card.name} · deal ${damageAmount} damage`}</h2>
+        <p class="targeting-timeout-note">Targeting closes after 15 seconds without a choice.</p>
         <div class="prompt-options">
           ${playerTargets}
           ${monsters.map((monster) => {
@@ -1027,6 +1033,33 @@ export function mountMatch(
     return options;
   }
 
+  function beginSpellTargeting(card: SpellCard): void {
+    clearTargetingState();
+    pendingTarget = { cardId: card.instanceId, spellId: card.id as "bolt" | "destroy" };
+    targetConfirmation = null;
+    targetingTimer = window.setTimeout(() => {
+      targetingTimer = undefined;
+      if (disposed || pendingTarget?.cardId !== card.instanceId) {
+        return;
+      }
+      pendingTarget = null;
+      targetConfirmation = null;
+      targetPreview.hide();
+      notice = `${card.name} targeting expired after 15 seconds.`;
+      render();
+    }, TARGETING_TIMEOUT_MS);
+  }
+
+  function clearTargetingState(): void {
+    if (targetingTimer !== undefined) {
+      window.clearTimeout(targetingTimer);
+      targetingTimer = undefined;
+    }
+    pendingTarget = null;
+    targetConfirmation = null;
+    targetPreview.hide();
+  }
+
   function playCard(cardId: string): void {
     const playerId = localPlayerId();
     const card = getPlayer(state, playerId).hand.find(
@@ -1054,8 +1087,7 @@ export function mountMatch(
         castLocalSpell(card, null);
         return;
       }
-      pendingTarget = { cardId, spellId: card.id };
-      targetConfirmation = null;
+      beginSpellTargeting(card);
       notice = `Choose a target for ${card.name}.`;
       render();
       return;
@@ -1080,8 +1112,7 @@ export function mountMatch(
         castLocalSpell(card, null);
         return;
       }
-      pendingTarget = { cardId, spellId: card.id };
-      targetConfirmation = null;
+      beginSpellTargeting(card);
       notice = `Choose a target for ${card.name}.`;
       render();
     } catch (error) {
@@ -1098,8 +1129,7 @@ export function mountMatch(
       return;
     }
     if (online) {
-      pendingTarget = null;
-      targetConfirmation = null;
+      clearTargetingState();
       sendOnlineIntent(
         { kind: "cast-spell", cardId: card.instanceId, target, payWith },
         `${card.name} sent to the server.`,
@@ -1107,8 +1137,7 @@ export function mountMatch(
       return;
     }
     try {
-      pendingTarget = null;
-      targetConfirmation = null;
+      clearTargetingState();
       applyState(
         castSpell(state, playerId, card.instanceId, target, payWith),
         `${card.name} waits on the stack.`,
@@ -1121,6 +1150,7 @@ export function mountMatch(
 
   function applyState(next: MatchState, message: string): void {
     const before = state;
+    clearTargetingState();
     state = next;
     announceStateTransition(before, next);
     notice = shouldSkipEmptyCombat() ? "No attack..." : message;
@@ -1147,6 +1177,7 @@ export function mountMatch(
     if (update.state) {
       const before = state;
       const oldStack = [...state.stack];
+      clearTargetingState();
       state = update.state;
       announceStateTransition(before, state);
       pendingAttack = update.combat ?? null;
@@ -1589,10 +1620,13 @@ export function mountMatch(
   function handleHudTooltipPointerMove(event: PointerEvent): void {
     const target = event.target;
     if (!(target instanceof Element)) {
+      targetPreview.hide();
       hideMonsterTooltip();
       hideSpellTooltip();
       return;
     }
+
+    updateTargetPreview(target);
 
     const monsterTrigger = target.closest<HTMLElement>(
       "[data-monster-tooltip-card-id]",
@@ -1616,6 +1650,46 @@ export function mountMatch(
       return;
     }
     hideSpellTooltip();
+  }
+
+  function updateTargetPreview(target: Element): void {
+    const targetButton = target.closest<HTMLElement>(
+      '[data-action="target-monster"], [data-action="target-player"]',
+    );
+    if (!pendingTarget || !targetButton) {
+      targetPreview.hide();
+      return;
+    }
+
+    const source = hud.querySelector<HTMLElement>(
+      `[data-card-id="${pendingTarget.cardId}"]`,
+    );
+    let destination: HTMLElement | null = null;
+    if (targetButton.dataset.action === "target-monster") {
+      destination = hud.querySelector<HTMLElement>(
+        `[data-action="board-card"][data-monster-id="${targetButton.dataset.monsterId ?? ""}"]`,
+      );
+    } else if (targetButton.dataset.action === "target-player") {
+      destination = hud.querySelector<HTMLElement>(
+        `[data-player-id="${targetButton.dataset.playerId ?? ""}"]`,
+      );
+    }
+
+    if (!source || !destination) {
+      targetPreview.hide();
+      return;
+    }
+    targetPreview.show(source, destination);
+  }
+
+  function handleHudTargetFocus(event: FocusEvent): void {
+    if (event.target instanceof Element) {
+      updateTargetPreview(event.target);
+    }
+  }
+
+  function hideTargetPreview(): void {
+    targetPreview.hide();
   }
 
   function monsterCardTooltipFor(cardId: string) {
@@ -2133,8 +2207,7 @@ export function mountMatch(
         return;
       }
       case "cancel-target":
-        pendingTarget = null;
-        targetConfirmation = null;
+        clearTargetingState();
         notice = "Spell targeting canceled.";
         render();
         return;
@@ -2178,8 +2251,7 @@ export function mountMatch(
         pendingFusionSources.clear();
         pendingFusionReveals.clear();
         selectedAttackers.clear();
-        pendingTarget = null;
-        targetConfirmation = null;
+        clearTargetingState();
         pendingAttack = null;
         dismissedFusionKey = "";
         summonTip.reset();
@@ -2221,10 +2293,13 @@ export function mountMatch(
   hud.addEventListener("click", handleClick);
   hud.addEventListener("pointermove", handleHudTooltipPointerMove);
   const hideHudTooltips = () => {
+    targetPreview.hide();
     hideMonsterTooltip();
     hideSpellTooltip();
   };
   hud.addEventListener("pointerleave", hideHudTooltips);
+  hud.addEventListener("focusin", handleHudTargetFocus);
+  hud.addEventListener("focusout", hideTargetPreview);
   arenaCanvas?.addEventListener("pointermove", handleMonsterPointerMove);
   arenaCanvas?.addEventListener("pointerleave", hideMonsterTooltip);
   const repositionCoachMarkPointers = () =>
@@ -2252,6 +2327,7 @@ export function mountMatch(
       window.clearTimeout(emptyCombatTimer);
       window.clearTimeout(summonTipTimer);
       window.clearTimeout(coachMarkTimer);
+      clearTargetingState();
       clearAnimationTimers();
       interruptDrawAnimations();
       for (const id of [...sceneIds]) {
@@ -2266,6 +2342,8 @@ export function mountMatch(
       hud.removeEventListener("click", handleClick);
       hud.removeEventListener("pointermove", handleHudTooltipPointerMove);
       hud.removeEventListener("pointerleave", hideHudTooltips);
+      hud.removeEventListener("focusin", handleHudTargetFocus);
+      hud.removeEventListener("focusout", hideTargetPreview);
       arenaCanvas?.removeEventListener("pointermove", handleMonsterPointerMove);
       arenaCanvas?.removeEventListener("pointerleave", hideMonsterTooltip);
       hideMonsterTooltip();
@@ -2276,6 +2354,7 @@ export function mountMatch(
       fusionReveal.dispose();
       monsterTooltip.dispose();
       spellTooltip.dispose();
+      targetPreview.dispose();
       art.dispose();
     },
   };
@@ -2330,7 +2409,7 @@ function playableDeck(archetype: ArchetypeId): readonly GameCard[] {
   ];
 }
 
-function primaryElement(archetypeId: ArchetypeId): Element {
+function primaryElement(archetypeId: ArchetypeId): CardElement {
   const archetype = ARCHETYPES.find((candidate) => candidate.id === archetypeId);
   if (!archetype) {
     throw new Error(`Unknown archetype ${archetypeId}`);
@@ -2390,8 +2469,8 @@ function landSummary(lands: MatchState["players"][number]["lands"]): string {
   return `<strong class="land-count">${lands.length} ${landLabel} · ${ready} READY</strong>`;
 }
 
-function landArt(element: Element, name: string): string {
-  const colors: Record<Element, string> = {
+function landArt(element: CardElement, name: string): string {
+  const colors: Record<CardElement, string> = {
     fire: "#ff5b38",
     water: "#27b9ff",
     earth: "#c78a4b",
@@ -2402,7 +2481,7 @@ function landArt(element: Element, name: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-function firstReadyElement(state: MatchState, playerId: PlayerId): Element | null {
+function firstReadyElement(state: MatchState, playerId: PlayerId): CardElement | null {
   return getPlayer(state, playerId).lands.find((land) => land.ready)?.card.element ?? null;
 }
 

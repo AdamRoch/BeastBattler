@@ -23,6 +23,7 @@ import {
   createFusionUpgradeOption,
   mountMatch,
   responseWindowMessage,
+  TARGETING_TIMEOUT_MS,
 } from "./controller";
 
 vi.mock("../card-art", async (importOriginal) => {
@@ -302,6 +303,88 @@ describe("contextual tutorials", () => {
   });
 });
 
+describe("spell targeting guidance", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it("uses neutral friendly styling and expires after 15 seconds", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      initialState: spellTargetingState(),
+    });
+
+    click(root, '[data-card-id="targeting-bolt"]');
+
+    const friendly = root.querySelector<HTMLElement>(
+      '[data-action="target-monster"][data-owner="player-1"]',
+    );
+    const enemy = root.querySelector<HTMLElement>(
+      '[data-action="target-monster"][data-owner="player-2"]',
+    );
+    expect(friendly?.classList.contains("is-friendly-target")).toBe(true);
+    expect(friendly?.classList.contains("is-lethal-target")).toBe(false);
+    expect(enemy?.classList.contains("is-friendly-target")).toBe(false);
+    expect(enemy?.classList.contains("is-lethal-target")).toBe(true);
+    expect(root.querySelector(".targeting-timeout-note")?.textContent).toContain(
+      "15 seconds",
+    );
+
+    vi.advanceTimersByTime(TARGETING_TIMEOUT_MS - 1);
+    expect(root.querySelector("[data-testid=targeting-prompt]")).not.toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(root.querySelector("[data-testid=targeting-prompt]")).toBeNull();
+    expect(root.querySelector(".notice")?.textContent).toContain(
+      "targeting expired after 15 seconds",
+    );
+    controller.dispose();
+  });
+
+  it("previews the real board target and clears the line on cancel", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      initialState: spellTargetingState(),
+    });
+    click(root, '[data-card-id="targeting-bolt"]');
+
+    const source = root.querySelector<HTMLElement>(
+      '[data-card-id="targeting-bolt"]',
+    );
+    const target = root.querySelector<HTMLElement>(
+      '[data-action="board-card"][data-monster-id="targeting-enemy"]',
+    );
+    const option = root.querySelector<HTMLElement>(
+      '[data-action="target-monster"][data-monster-id="targeting-enemy"]',
+    );
+    if (!source || !target || !option) {
+      throw new Error("Missing targeting preview fixtures");
+    }
+    setRect(source, 120, 560, 110, 150);
+    setRect(target, 690, 130, 120, 70);
+    option.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 780,
+      clientY: 330,
+    }));
+
+    const layer = root.querySelector<SVGElement>(".target-preview-layer");
+    expect(layer?.hasAttribute("hidden")).toBe(false);
+    expect(root.querySelector(".target-preview-path")?.getAttribute("d")).toContain(
+      "750 165",
+    );
+
+    click(root, '[data-action="cancel-target"]');
+    expect(layer?.hasAttribute("hidden")).toBe(true);
+    controller.dispose();
+  });
+});
+
 function pendingSpell(controller: "player-1" | "player-2" = "player-2"): PendingStackItem {
   const card = assembleDeck("fire-water").find(
     (candidate) => candidate.kind === "spell" && candidate.id === "bolt",
@@ -434,6 +517,45 @@ function humanMossTortoiseSummonState(): MatchState {
   });
 }
 
+function spellTargetingState(): MatchState {
+  const deck = assembleDeck("fire-water");
+  const bolt = deck.find(
+    (card) => card.kind === "spell" && card.id === "bolt",
+  );
+  const ember = deck.find(
+    (card): card is BaseMonsterCard =>
+      card.kind === "monster" &&
+      card.category === "base-monster" &&
+      card.id === "ember-imp",
+  );
+  const tide = deck.find(
+    (card): card is BaseMonsterCard =>
+      card.kind === "monster" &&
+      card.category === "base-monster" &&
+      card.id === "tide-serpent",
+  );
+  const fireLand = deck.find(
+    (card): card is LandCard => card.kind === "land" && card.element === "fire",
+  );
+  if (!bolt || bolt.kind !== "spell" || !ember || !tide || !fireLand) {
+    throw new Error("Missing spell targeting fixtures");
+  }
+
+  let state = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
+  state = { ...state, activePlayer: "player-1", phase: "main", turnNumber: 3 };
+  state = withPlayer(state, "player-1", {
+    hand: [{ ...bolt, instanceId: "targeting-bolt" }],
+    lands: [readyLand(fireLand, "targeting-land")],
+    monsters: [permanent(ember, "targeting-friendly")],
+    landPlayedThisTurn: true,
+    mulliganDecision: "kept",
+  });
+  return withPlayer(state, "player-2", {
+    monsters: [permanent(tide, "targeting-enemy")],
+    mulliganDecision: "kept",
+  });
+}
+
 function withPlayer(
   state: MatchState,
   playerId: PlayerId,
@@ -462,4 +584,16 @@ function click(root: HTMLElement, selector: string): void {
   const button = root.querySelector<HTMLElement>(selector);
   if (!button) throw new Error(`Missing ${selector}`);
   button.click();
+}
+
+function setRect(
+  element: Element,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    value: () => new DOMRect(left, top, width, height),
+  });
 }
