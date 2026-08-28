@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ArenaAnimationEvent } from "../arena";
 import {
   SFX_EFFECTS,
+  type AnnouncerAudioElement,
   createSfxEngine,
   effectForAnimation,
   readSfxSettings,
-  summonAnnouncementPlan,
 } from "./index";
+import { ANNOUNCER_CLIPS, announcerLineForMonster } from "./announcer";
+import { BASE_MONSTERS, FUSION_MONSTERS } from "../cards/catalog";
 
 describe("procedural sound effects", () => {
   it("maps every arena animation to a sound signature", () => {
@@ -110,61 +112,123 @@ describe("procedural sound effects", () => {
     expect(music.pause).toHaveBeenCalledOnce();
   });
 
-  it("calls the monster name, then schedules the warp through the SFX engine", async () => {
-    const spoken: SpeechSynthesisUtterance[] = [];
+  it("preloads Adam's clips, calls the monster name, then schedules the warp", async () => {
+    const { audios, factory } = fakeAnnouncerAudio();
     const engine = createSfxEngine({
+      announcerAudioFactory: factory,
       audioContextFactory: fakeAudioContext,
       storage: null,
-      speechSynthesis: {
-        cancel: vi.fn(),
-        speak: (utterance) => spoken.push(utterance),
-      },
-      speechUtteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
     });
+
+    expect(factory).toHaveBeenCalledTimes(43);
+    expect(engine.getDebugState().announcerClipCount).toBe(43);
+    const stoneBull = audios.get(ANNOUNCER_CLIPS["stone-bull"]);
+    expect(stoneBull).toMatchObject({ preload: "auto", volume: 0.48 });
 
     await engine.unlock();
     engine.announceSummon("Stone Bull", "summon");
 
-    expect(spoken).toHaveLength(1);
-    expect(spoken[0]).toMatchObject({
-      text: "Stone Bull!",
-      pitch: 0.62,
-      rate: 0.82,
-      volume: 0.32,
+    expect(stoneBull?.play).toHaveBeenCalledOnce();
+    expect(engine.getDebugState()).toMatchObject({
+      announcerLine: "stone-bull",
+      announcerQueueLength: 0,
     });
-    spoken[0].onend?.(new Event("end") as SpeechSynthesisEvent);
+    finishAudio(stoneBull);
     expect(engine.getDebugState().effectCounts["summon-warp"]).toBe(1);
+    expect(engine.getDebugState().announcerLine).toBeNull();
 
     engine.playAnimation({ type: "summon", monsterId: "stone-bull" });
     expect(engine.getDebugState().effectCounts.summon).toBe(0);
     engine.dispose();
   });
 
-  it("does not speak or schedule the warp while sound is muted", async () => {
-    const speak = vi.fn();
+  it("does not announce or schedule the warp while sound is muted", async () => {
+    const { audios, factory } = fakeAnnouncerAudio();
     const engine = createSfxEngine({
+      announcerAudioFactory: factory,
       audioContextFactory: fakeAudioContext,
       storage: null,
-      speechSynthesis: { cancel: vi.fn(), speak },
-      speechUtteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
     });
 
     await engine.unlock();
     engine.setMuted(true);
     engine.announceSummon("Stone Bull", "fusion");
-    expect(speak).not.toHaveBeenCalled();
+    expect(audios.get(ANNOUNCER_CLIPS["stone-bull"])?.play).not.toHaveBeenCalled();
     expect(engine.getDebugState().effectCounts["summon-warp"]).toBe(0);
     engine.dispose();
   });
 
-  it("keeps the announcer voice settings in one testable plan", () => {
-    expect(summonAnnouncementPlan("Steam Beast")).toEqual({
-      text: "Steam Beast!",
-      pitch: 0.62,
-      rate: 0.82,
+  it("queues the complete winner message and lets mute stop it", async () => {
+    const { audios, factory } = fakeAnnouncerAudio();
+    const engine = createSfxEngine({
+      announcerAudioFactory: factory,
+      audioContextFactory: fakeAudioContext,
+      storage: null,
     });
+    await engine.unlock();
+
+    engine.announceResult("win");
+    const victory = audios.get(ANNOUNCER_CLIPS.victory);
+    const gameLine = audios.get(ANNOUNCER_CLIPS["you-have-won-at-the-game-of-beast-battler"]);
+    const thanks = audios.get(ANNOUNCER_CLIPS["beast-mode-thanks"]);
+    expect(victory?.play).toHaveBeenCalledOnce();
+    expect(engine.getDebugState()).toMatchObject({
+      announcerLine: "victory",
+      announcerQueueLength: 2,
+    });
+
+    finishAudio(victory);
+    expect(gameLine?.play).toHaveBeenCalledOnce();
+    finishAudio(gameLine);
+    expect(thanks?.play).toHaveBeenCalledOnce();
+
+    engine.setMuted(true);
+    expect(thanks?.pause).toHaveBeenCalledOnce();
+    expect(engine.getDebugState()).toMatchObject({
+      announcerLine: null,
+      announcerQueueLength: 0,
+    });
+    engine.dispose();
+  });
+
+  it("ships a recorded clip for every catalog monster", () => {
+    const monsters = [...BASE_MONSTERS, ...FUSION_MONSTERS];
+    expect(Object.keys(ANNOUNCER_CLIPS)).toHaveLength(43);
+    expect(monsters.map((monster) => announcerLineForMonster(monster.name))).toEqual(
+      monsters.map((monster) => monster.id),
+    );
+    expect(announcerLineForMonster("Definitely Not A Beast")).toBeNull();
   });
 });
+
+function fakeAnnouncerAudio(): {
+  audios: Map<string, AnnouncerAudioElement & { play: ReturnType<typeof vi.fn>; pause: ReturnType<typeof vi.fn> }>;
+  factory: (source: string) => AnnouncerAudioElement | null;
+} {
+  const audios = new Map<string, AnnouncerAudioElement & {
+    play: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+  }>();
+  const factory = vi.fn((source: string) => {
+    const audio = {
+      currentTime: 0,
+      onended: null,
+      onerror: null,
+      preload: "none",
+      volume: 1,
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+    } satisfies AnnouncerAudioElement;
+    audios.set(source, audio);
+    return audio;
+  });
+  return { audios, factory };
+}
+
+function finishAudio(audio: AnnouncerAudioElement | undefined): void {
+  const onended = audio?.onended as (() => void) | null | undefined;
+  onended?.();
+}
 
 function fakeAudioContext(): AudioContext {
   const parameter = () => ({
