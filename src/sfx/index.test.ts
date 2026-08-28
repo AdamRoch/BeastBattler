@@ -54,7 +54,7 @@ describe("procedural sound effects", () => {
       muted: false,
       volume: 1,
       musicVolume: 1,
-      voiceVolume: 1,
+      voiceVolume: 0.5,
       effectsVolume: 1,
     });
     expect(readSfxSettings({
@@ -63,14 +63,23 @@ describe("procedural sound effects", () => {
       muted: true,
       volume: 1,
       musicVolume: 1,
-      voiceVolume: 1,
+      voiceVolume: 0.5,
       effectsVolume: 1,
     });
     expect(readSfxSettings({ getItem: () => "not-json" })).toEqual({
       muted: false,
       volume: 1,
       musicVolume: 1,
-      voiceVolume: 1,
+      voiceVolume: 0.5,
+      effectsVolume: 1,
+    });
+    expect(readSfxSettings({
+      getItem: () => JSON.stringify({ voiceVolume: 0.8 }),
+    })).toEqual({
+      muted: false,
+      volume: 1,
+      musicVolume: 1,
+      voiceVolume: 0.8,
       effectsVolume: 1,
     });
   });
@@ -202,7 +211,7 @@ describe("procedural sound effects", () => {
     expect(factory).toHaveBeenCalledTimes(43);
     expect(engine.getDebugState().announcerClipCount).toBe(43);
     const stoneBull = audios.get(ANNOUNCER_CLIPS["stone-bull"]);
-    expect(stoneBull).toMatchObject({ preload: "auto", volume: 1 });
+    expect(stoneBull).toMatchObject({ preload: "auto", volume: 0.75 });
 
     await engine.unlock();
     engine.announceSummon("Stone Bull", "summon");
