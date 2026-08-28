@@ -114,8 +114,8 @@ The four V1 spells:
 
 | Spell | Type | Effect |
 |---|---|---|
-| Bolt | Sorcery | Deal 2 damage to any target (monster or player) |
-| Destroy | Sorcery | Destroy target monster |
+| Bolt | Sorcery | Deal 2 damage to the opposing player or an opposing beast |
+| Destroy | Sorcery | Destroy an opposing beast regardless of its health |
 | Draw | Sorcery | Draw 2 cards |
 | Counterspell | Instant | Counter target monster summon or spell |
 

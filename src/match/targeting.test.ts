@@ -5,11 +5,10 @@ import {
   damageOutcome,
   isRecommendedTarget,
   monsterTargetLabel,
-  requiresSelfTargetConfirmation,
 } from "./targeting";
 
-const damage: SpellEffect = { kind: "damage", amount: 2, target: "any" };
-const destroy: SpellEffect = { kind: "destroy", target: "monster" };
+const damage: SpellEffect = { kind: "damage", amount: 2, target: "opponent" };
+const destroy: SpellEffect = { kind: "destroy", target: "opponent-monster" };
 const draw: SpellEffect = { kind: "draw", count: 2 };
 
 describe("damage outcomes", () => {
@@ -46,11 +45,5 @@ describe("targeting recommendations", () => {
 
   it("does not recommend targets for non-destructive effects", () => {
     expect(isRecommendedTarget(draw, "player-1", "player-2")).toBe(false);
-  });
-
-  it("asks before a destructive effect hits the controller or their monster", () => {
-    expect(requiresSelfTargetConfirmation(damage, "player-1", "player-1")).toBe(true);
-    expect(requiresSelfTargetConfirmation(destroy, "player-1", "player-2")).toBe(false);
-    expect(requiresSelfTargetConfirmation(draw, "player-1", "player-1")).toBe(false);
   });
 });

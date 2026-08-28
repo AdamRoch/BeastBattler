@@ -38,11 +38,3 @@ export function isRecommendedTarget(
 ): boolean {
   return isDestructiveEffect(effect) && controller !== targetOwner;
 }
-
-export function requiresSelfTargetConfirmation(
-  effect: SpellEffect,
-  controller: PlayerId,
-  targetOwner: PlayerId,
-): boolean {
-  return isDestructiveEffect(effect) && controller === targetOwner;
-}

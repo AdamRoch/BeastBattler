@@ -88,7 +88,6 @@ import {
   damageOutcome,
   isRecommendedTarget,
   monsterTargetLabel,
-  requiresSelfTargetConfirmation,
 } from "./targeting";
 import {
   privacyCurtainForTransition,
@@ -249,7 +248,6 @@ export function mountMatch(
     : null;
   let selectedAttackers = new Set<string>();
   let pendingTarget: PendingTarget | null = null;
-  let targetConfirmation: SpellTarget | null = null;
   let targetingTimer: number | undefined;
   let pendingAttack: AttackDeclaration | null = null;
   let dismissedFusionKey = "";
@@ -861,42 +859,26 @@ export function mountMatch(
   function targetingPrompt(target: PendingTarget): string {
     const localId = localPlayerId();
     const otherId = opponentId(localId);
-    const local = getPlayer(state, localId);
     const other = getPlayer(state, otherId);
     const card = findSpellByInstance(target.cardId);
     if (!card) {
       return "";
     }
-    if (targetConfirmation) {
-      return `
-        <section class="floating-prompt targeting-prompt targeting-confirmation" data-testid="targeting-self-confirm">
-          <span class="eyebrow">${card.name.toUpperCase()}</span>
-          <h2>Are you sure?</h2>
-          <p>This target is yours and is not recommended.</p>
-          <div class="decision-actions">
-            <button class="primary-action" data-action="confirm-target">CAST ANYWAY</button>
-            <button class="quiet-action" data-action="cancel-target-confirm">CANCEL</button>
-          </div>
-        </section>
-      `;
-    }
     const damageAmount = card.effect.kind === "damage" ? card.effect.amount : null;
-    const targetClass = (targetOwner: PlayerId, isLethal = false): string =>
+    const targetClass = (isLethal = false): string =>
       [
         "target-option",
-        targetOwner === localId ? "is-friendly-target" : "",
-        isRecommendedTarget(card.effect, localId, targetOwner)
+        isRecommendedTarget(card.effect, localId, otherId)
           ? "is-recommended-target"
           : "",
-        isLethal && targetOwner !== localId ? "is-lethal-target" : "",
+        isLethal ? "is-lethal-target" : "",
       ].filter(Boolean).join(" ");
     const playerTargets = damageAmount !== null
       ? `
-          <button class="${targetClass(otherId)}" data-action="target-player" data-player-id="${otherId}"><span class="target-label">Opponent LP ${other.life} <span class="target-damage-outcome">→ ${damageOutcome(other.life, damageAmount).remaining}</span></span></button>
-          <button class="${targetClass(localId)}" data-action="target-player" data-player-id="${localId}"><span class="target-label">Your LP ${local.life} <span class="target-damage-outcome">→ ${damageOutcome(local.life, damageAmount).remaining}</span></span></button>
+          <button class="${targetClass()}" data-action="target-player" data-player-id="${otherId}"><span class="target-label">Opponent LP ${other.life} <span class="target-damage-outcome">→ ${damageOutcome(other.life, damageAmount).remaining}</span></span></button>
         `
       : "";
-    const monsters = [...other.monsters, ...local.monsters];
+    const monsters = other.monsters;
     return `
       <section class="floating-prompt targeting-prompt" data-testid="targeting-prompt">
         <span class="eyebrow spell-tooltip-trigger" data-spell-tooltip-id="${card.id}">${target.spellId.toUpperCase()}</span>
@@ -910,7 +892,7 @@ export function mountMatch(
             const outcome = damageAmount === null
               ? null
               : damageOutcome(remainingHealth, damageAmount);
-            return `<button class="${targetClass(owner, outcome?.isLethal)}" data-action="target-monster" data-owner="${owner}" data-monster-id="${monster.card.instanceId}">${outcome === null
+            return `<button class="${targetClass(outcome?.isLethal)}" data-action="target-monster" data-owner="${owner}" data-monster-id="${monster.card.instanceId}">${outcome === null
               ? monsterTargetLabel(monster.card.name, monster.card.attack, remainingHealth, localId, owner)
               : `<span class="target-label">${monsterTargetLabel(monster.card.name, monster.card.attack, remainingHealth, localId, owner)}</span><span class="target-damage-outcome">→ ${outcome.isLethal ? "0 HP" : `SURVIVES AT ${outcome.remaining} HP`}</span>${outcome.isLethal ? '<span class="target-lethal-marker">DESTROYED</span>' : ""}`}</button>`;
           }).join("")}
@@ -1041,14 +1023,12 @@ export function mountMatch(
   function beginSpellTargeting(card: SpellCard): void {
     clearTargetingState();
     pendingTarget = { cardId: card.instanceId, spellId: card.id as "bolt" | "destroy" };
-    targetConfirmation = null;
     targetingTimer = window.setTimeout(() => {
       targetingTimer = undefined;
       if (disposed || pendingTarget?.cardId !== card.instanceId) {
         return;
       }
       pendingTarget = null;
-      targetConfirmation = null;
       targetPreview.hide();
       notice = `${card.name} targeting expired after 15 seconds.`;
       render();
@@ -1061,7 +1041,6 @@ export function mountMatch(
       targetingTimer = undefined;
     }
     pendingTarget = null;
-    targetConfirmation = null;
     targetPreview.hide();
   }
 
@@ -2120,11 +2099,6 @@ export function mountMatch(
   }
 
   function selectSpellTarget(card: SpellCard, target: SpellTarget): void {
-    if (requiresSelfTargetConfirmation(card.effect, localPlayerId(), target.playerId)) {
-      targetConfirmation = target;
-      render();
-      return;
-    }
     castLocalSpell(card, target);
   }
 
@@ -2301,17 +2275,6 @@ export function mountMatch(
       case "cancel-target":
         clearTargetingState();
         notice = "Spell targeting canceled.";
-        render();
-        return;
-      case "confirm-target": {
-        const card = pendingTarget ? findSpellByInstance(pendingTarget.cardId) : null;
-        if (card && targetConfirmation) {
-          castLocalSpell(card, targetConfirmation);
-        }
-        return;
-      }
-      case "cancel-target-confirm":
-        targetConfirmation = null;
         render();
         return;
       case "counter":

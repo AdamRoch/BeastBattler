@@ -18,8 +18,8 @@ describe("deck preview", () => {
       { name: "Volt Bat", attack: 1, health: 2, keyword: "flying" },
     ]);
     expect(preview.spells.map((spell) => `${spell.name}: ${spell.rulesText}`)).toEqual([
-      "Bolt: Deal 2 damage to any monster or player.",
-      "Destroy: Destroy any creature regardless of its health.",
+      "Bolt: Deal 2 damage to the opposing player or one of their beasts.",
+      "Destroy: Destroy an opposing beast regardless of its health.",
       "Draw: Draw 2 cards.",
       "Counterspell: Counter a monster summon or spell.",
     ]);
@@ -40,7 +40,7 @@ describe("deck preview", () => {
     expect(markup).toContain("20 CARDS");
     expect(markup).toContain("Volt Bat");
     expect(markup).toContain("FLYING");
-    expect(markup).toContain("Destroy any creature regardless of its health.");
+    expect(markup).toContain("Destroy an opposing beast regardless of its health.");
     expect(markup).toContain("Plasma Beast");
     expect(markup).toContain("BURST");
   });

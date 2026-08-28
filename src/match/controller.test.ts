@@ -415,7 +415,7 @@ describe("spell targeting guidance", () => {
     document.body.replaceChildren();
   });
 
-  it("uses neutral friendly styling and expires after 15 seconds", () => {
+  it("offers only opposing targets and expires after 15 seconds", () => {
     vi.useFakeTimers();
     const root = document.createElement("div");
     document.body.append(root);
@@ -426,15 +426,17 @@ describe("spell targeting guidance", () => {
 
     click(root, '[data-card-id="targeting-bolt"]');
 
-    const friendly = root.querySelector<HTMLElement>(
+    const friendlyMonster = root.querySelector<HTMLElement>(
       '[data-action="target-monster"][data-owner="player-1"]',
+    );
+    const friendlyPlayer = root.querySelector<HTMLElement>(
+      '[data-action="target-player"][data-player-id="player-1"]',
     );
     const enemy = root.querySelector<HTMLElement>(
       '[data-action="target-monster"][data-owner="player-2"]',
     );
-    expect(friendly?.classList.contains("is-friendly-target")).toBe(true);
-    expect(friendly?.classList.contains("is-lethal-target")).toBe(false);
-    expect(enemy?.classList.contains("is-friendly-target")).toBe(false);
+    expect(friendlyMonster).toBeNull();
+    expect(friendlyPlayer).toBeNull();
     expect(enemy?.classList.contains("is-lethal-target")).toBe(true);
     expect(root.querySelector(".targeting-timeout-note")?.textContent).toContain(
       "15 seconds",

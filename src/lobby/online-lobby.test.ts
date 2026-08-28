@@ -200,7 +200,7 @@ describe("mountOnlineLobby", () => {
     expect(root.innerHTML).toContain('aria-describedby="deck-preview-fire-lightning"');
     expect(root.innerHTML).toContain("20 CARDS");
     expect(root.innerHTML).toContain("Flying attackers: Volt Bat.");
-    expect(root.innerHTML).toContain("Destroy any creature regardless of its health.");
+    expect(root.innerHTML).toContain("Destroy an opposing beast regardless of its health.");
   });
 
   it("resumes identity with the stored reconnect token on a fresh lobby mount", () => {
