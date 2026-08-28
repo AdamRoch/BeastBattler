@@ -491,6 +491,64 @@ describe("spell targeting guidance", () => {
     expect(layer?.hasAttribute("hidden")).toBe(true);
     controller.dispose();
   });
+
+  it("restores a usable phase advance after canceling Destroy targeting", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      initialState: spellTargetingState("destroy"),
+    });
+
+    click(root, '[data-card-id="targeting-destroy"]');
+    expect(root.querySelector("[data-testid=targeting-prompt]")).not.toBeNull();
+
+    click(root, '[data-action="cancel-target"]');
+
+    expect(root.querySelector("[data-testid=targeting-prompt]")).toBeNull();
+    expect(root.querySelector(".notice")?.textContent).toContain(
+      "Spell targeting canceled",
+    );
+    const advance = root.querySelector<HTMLButtonElement>(
+      '[data-phase-advance][data-action="advance"]',
+    );
+    expect(advance).not.toBeNull();
+    expect(advance?.disabled).toBe(false);
+    advance?.click();
+    expect(controller.getState().phase).toBe("combat");
+    controller.dispose();
+  });
+
+  it("blocks Destroy targeting while the AI owes a response, then resumes play", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      initialState: aiResponseStateWithDestroy(),
+    });
+
+    expect(root.querySelector(".turn-panel small")?.textContent).toBe(
+      "OPPONENT PRIORITY",
+    );
+    expect(root.querySelector(".action-dock")?.textContent).toContain(
+      "AI RESPONDING",
+    );
+
+    click(root, '[data-card-id="targeting-destroy"]');
+
+    expect(root.querySelector("[data-testid=targeting-prompt]")).toBeNull();
+    expect(root.querySelector(".notice")?.textContent).toContain(
+      "Wait for the opponent's response",
+    );
+
+    vi.advanceTimersByTime(360 + AI_PRESENTATION_BEAT_MS);
+
+    expect(controller.getState().responsePlayer).toBeNull();
+    expect(root.querySelector('[data-phase-advance][data-action="advance"]'))
+      .not.toBeNull();
+    controller.dispose();
+  });
 });
 
 describe("Reach beast fusion prompts", () => {
@@ -714,10 +772,10 @@ function authoritativeMossState(): MatchState {
   return withPlayer(state, "player-2", { mulliganDecision: "kept" });
 }
 
-function spellTargetingState(): MatchState {
+function spellTargetingState(spellId: "bolt" | "destroy" = "bolt"): MatchState {
   const deck = assembleDeck("fire-water");
-  const bolt = deck.find(
-    (card) => card.kind === "spell" && card.id === "bolt",
+  const spell = deck.find(
+    (card) => card.kind === "spell" && card.id === spellId,
   );
   const ember = deck.find(
     (card): card is BaseMonsterCard =>
@@ -734,14 +792,14 @@ function spellTargetingState(): MatchState {
   const fireLand = deck.find(
     (card): card is LandCard => card.kind === "land" && card.element === "fire",
   );
-  if (!bolt || bolt.kind !== "spell" || !ember || !tide || !fireLand) {
+  if (!spell || spell.kind !== "spell" || !ember || !tide || !fireLand) {
     throw new Error("Missing spell targeting fixtures");
   }
 
   let state = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
   state = { ...state, activePlayer: "player-1", phase: "main", turnNumber: 3 };
   state = withPlayer(state, "player-1", {
-    hand: [{ ...bolt, instanceId: "targeting-bolt" }],
+    hand: [{ ...spell, instanceId: `targeting-${spellId}` }],
     lands: [readyLand(fireLand, "targeting-land")],
     monsters: [permanent(ember, "targeting-friendly")],
     landPlayedThisTurn: true,
@@ -751,6 +809,25 @@ function spellTargetingState(): MatchState {
     monsters: [permanent(tide, "targeting-enemy")],
     mulliganDecision: "kept",
   });
+}
+
+function aiResponseStateWithDestroy(): MatchState {
+  const state = spellTargetingState("destroy");
+  const source = getPlayer(state, "player-1").monsters[0];
+  if (!source || source.card.category !== "base-monster") {
+    throw new Error("Missing pending summon fixture");
+  }
+  const pending: PendingStackItem = {
+    stackId: "pending-human-summon",
+    kind: "summon",
+    controller: "player-1",
+    card: { ...source.card, instanceId: "pending-human-summon-card" },
+  };
+  return {
+    ...state,
+    stack: [pending],
+    responsePlayer: "player-2",
+  };
 }
 
 function reachFusionState(
