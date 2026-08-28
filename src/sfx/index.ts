@@ -1,4 +1,10 @@
 import type { ArenaScene, ArenaAnimationEvent } from "../arena";
+import {
+  ANNOUNCER_CLIPS,
+  announcerClipSource,
+  announcerLineForMonster,
+  type AnnouncerLine,
+} from "./announcer";
 
 export const SFX_EFFECTS = [
   "summon",
@@ -28,6 +34,9 @@ export interface SfxSettings {
 }
 
 export interface SfxDebugState extends SfxSettings {
+  readonly announcerClipCount: number;
+  readonly announcerLine: AnnouncerLine | null;
+  readonly announcerQueueLength: number;
   readonly ambientMonsterCount: number;
   readonly contextState: AudioContextState | "uninitialized";
   readonly effectCounts: Readonly<Record<SfxEffect, number>>;
@@ -39,10 +48,12 @@ export interface SfxEngine {
   unlock(): Promise<boolean>;
   startMusic(): Promise<boolean>;
   play(effect: SfxEffect): void;
+  announce(line: AnnouncerLine): void;
   announceSummon(
     monsterName: string,
     materialization: "summon" | "fusion",
   ): void;
+  announceResult(outcome: "win" | "loss"): void;
   playLpTicks(count: number): void;
   playAnimation(event: ArenaAnimationEvent): void;
   setAmbientMonsterCount(count: number): void;
@@ -55,12 +66,21 @@ export interface SfxEngine {
 }
 
 export interface SfxEngineOptions {
+  readonly announcerAudioFactory?: (source: string) => AnnouncerAudioElement | null;
   readonly audioContextFactory?: () => AudioContext;
   readonly backgroundMusicFactory?: (source: string) => BackgroundMusicElement | null;
   readonly backgroundMusicSource?: string | null;
   readonly storage?: Pick<Storage, "getItem" | "setItem"> | null;
-  readonly speechSynthesis?: Pick<SpeechSynthesis, "cancel" | "speak"> | null;
-  readonly speechUtteranceFactory?: (text: string) => SpeechSynthesisUtterance;
+}
+
+export interface AnnouncerAudioElement {
+  currentTime: number;
+  onended: HTMLAudioElement["onended"];
+  onerror: HTMLAudioElement["onerror"];
+  preload: string;
+  volume: number;
+  play(): Promise<void>;
+  pause(): void;
 }
 
 interface BackgroundMusicElement {
@@ -75,22 +95,9 @@ const STORAGE_KEY = "beast-battler:sfx:v1";
 const DEFAULT_SETTINGS: SfxSettings = { muted: false, volume: 0.32 };
 const BACKGROUND_MUSIC_SOURCE = "/audio/background-music.mp3";
 const BACKGROUND_MUSIC_GAIN = 0.16;
+const ANNOUNCER_GAIN = 1.5;
 const SILENCE = 0.0001;
-const ANNOUNCER_PITCH = 0.62;
-const ANNOUNCER_RATE = 0.82;
 const WARP_FALLBACK_DELAY_SECONDS = 0.14;
-
-export function summonAnnouncementPlan(monsterName: string): Readonly<{
-  text: string;
-  pitch: number;
-  rate: number;
-}> {
-  return {
-    text: `${monsterName}!`,
-    pitch: ANNOUNCER_PITCH,
-    rate: ANNOUNCER_RATE,
-  };
-}
 
 export function readSfxSettings(
   storage: Pick<Storage, "getItem"> | null,
@@ -141,14 +148,11 @@ export function createSfxEngine(
     ? browserStorage()
     : options.storage;
   const contextFactory = options.audioContextFactory ?? createBrowserAudioContext;
+  const announcerAudioFactory = options.announcerAudioFactory ?? createBrowserAnnouncerAudio;
   const backgroundMusicFactory = options.backgroundMusicFactory ?? createBrowserBackgroundMusic;
   const backgroundMusicSource = options.backgroundMusicSource === undefined
     ? BACKGROUND_MUSIC_SOURCE
     : options.backgroundMusicSource;
-  const speech = options.speechSynthesis === undefined
-    ? browserSpeechSynthesis()
-    : options.speechSynthesis;
-  const createUtterance = options.speechUtteranceFactory ?? createBrowserUtterance;
   const settingsListeners = new Set<(settings: SfxSettings) => void>();
   const effectCounts = Object.fromEntries(
     SFX_EFFECTS.map((effect) => [effect, 0]),
@@ -163,11 +167,22 @@ export function createSfxEngine(
   let musicRequest: Promise<boolean> | null = null;
   let ambientMonsterCount = 0;
   let disposed = false;
-  let activeAnnouncements = 0;
+  const announcerAudio = new Map<AnnouncerLine, AnnouncerAudioElement | null>();
+  const announcementQueue: Array<{
+    readonly line: AnnouncerLine;
+    readonly onComplete?: () => void;
+  }> = [];
+  let activeAnnouncement: {
+    readonly audio: AnnouncerAudioElement;
+    readonly cancel: () => void;
+    readonly line: AnnouncerLine;
+  } | null = null;
   const suppressedMaterializations: Record<"summon" | "fusion", number> = {
     summon: 0,
     fusion: 0,
   };
+
+  preloadAnnouncerClips();
 
   async function unlock(): Promise<boolean> {
     if (disposed) {
@@ -280,6 +295,10 @@ export function createSfxEngine(
     scheduleEffect(effect, 0);
   }
 
+  function announce(line: AnnouncerLine): void {
+    queueAnnouncement(line);
+  }
+
   function announceSummon(
     monsterName: string,
     materialization: "summon" | "fusion",
@@ -289,34 +308,115 @@ export function createSfxEngine(
       return;
     }
 
-    const plan = summonAnnouncementPlan(monsterName);
-    if (!speech || !createUtterance) {
+    const line = announcerLineForMonster(monsterName);
+    if (!line) {
       scheduleEffect("summon-warp", WARP_FALLBACK_DELAY_SECONDS);
       return;
     }
 
-    try {
-      const utterance = createUtterance(plan.text);
-      utterance.pitch = plan.pitch;
-      utterance.rate = plan.rate;
-      utterance.volume = effectiveVolume();
-      let settled = false;
-      const finishAnnouncement = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        activeAnnouncements = Math.max(0, activeAnnouncements - 1);
-        scheduleEffect("summon-warp", 0);
-      };
-      utterance.onend = finishAnnouncement;
-      utterance.onerror = finishAnnouncement;
-      activeAnnouncements += 1;
-      speech.speak(utterance);
-    } catch {
-      activeAnnouncements = Math.max(0, activeAnnouncements - 1);
-      scheduleEffect("summon-warp", WARP_FALLBACK_DELAY_SECONDS);
+    queueAnnouncement(line, () => scheduleEffect("summon-warp", 0));
+  }
+
+  function announceResult(outcome: "win" | "loss"): void {
+    if (!context || !masterGain || disposed || effectiveVolume() === 0) {
+      return;
     }
+    stopAnnouncements();
+    const lines: readonly AnnouncerLine[] = outcome === "win"
+      ? [
+          "victory",
+          "you-have-won-at-the-game-of-beast-battler",
+          "beast-mode-thanks",
+        ]
+      : ["defeat", "banished-to-the-shadow-realm"];
+    for (const line of lines) {
+      queueAnnouncement(line);
+    }
+  }
+
+  function preloadAnnouncerClips(): void {
+    for (const line of Object.keys(ANNOUNCER_CLIPS) as AnnouncerLine[]) {
+      let audio: AnnouncerAudioElement | null = null;
+      try {
+        audio = announcerAudioFactory(announcerClipSource(line));
+        if (audio) {
+          audio.preload = "auto";
+          audio.volume = announcerVolume();
+        }
+      } catch {
+        audio = null;
+      }
+      announcerAudio.set(line, audio);
+    }
+  }
+
+  function queueAnnouncement(line: AnnouncerLine, onComplete?: () => void): void {
+    if (!context || !masterGain || disposed || effectiveVolume() === 0) {
+      return;
+    }
+    announcementQueue.push({ line, onComplete });
+    playNextAnnouncement();
+  }
+
+  function playNextAnnouncement(): void {
+    if (activeAnnouncement || disposed) {
+      return;
+    }
+    const queued = announcementQueue.shift();
+    if (!queued) {
+      return;
+    }
+    const audio = announcerAudio.get(queued.line);
+    if (!audio) {
+      queued.onComplete?.();
+      playNextAnnouncement();
+      return;
+    }
+
+    let settled = false;
+    const settleAnnouncement = (completed: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      audio.onended = null;
+      audio.onerror = null;
+      if (activeAnnouncement?.audio === audio) {
+        activeAnnouncement = null;
+      }
+      if (completed) {
+        queued.onComplete?.();
+        playNextAnnouncement();
+      }
+    };
+    const finishAnnouncement = () => settleAnnouncement(true);
+    const cancelAnnouncement = () => {
+      audio.pause();
+      audio.currentTime = 0;
+      settleAnnouncement(false);
+    };
+    try {
+      audio.currentTime = 0;
+      audio.volume = announcerVolume();
+      audio.onended = finishAnnouncement;
+      audio.onerror = finishAnnouncement;
+      activeAnnouncement = {
+        audio,
+        cancel: cancelAnnouncement,
+        line: queued.line,
+      };
+      void Promise.resolve(audio.play()).catch(finishAnnouncement);
+    } catch {
+      finishAnnouncement();
+    }
+  }
+
+  function stopAnnouncements(): void {
+    announcementQueue.length = 0;
+    if (!activeAnnouncement) {
+      return;
+    }
+    activeAnnouncement.cancel();
   }
 
   function playLpTicks(count: number): void {
@@ -482,9 +582,8 @@ export function createSfxEngine(
 
   function setMuted(muted: boolean): void {
     settings = { ...settings, muted };
-    if (muted && activeAnnouncements > 0) {
-      activeAnnouncements = 0;
-      speech?.cancel();
+    if (muted) {
+      stopAnnouncements();
     }
     applySettings();
   }
@@ -505,6 +604,11 @@ export function createSfxEngine(
     if (backgroundMusic) {
       backgroundMusic.volume = backgroundMusicVolume();
     }
+    for (const audio of announcerAudio.values()) {
+      if (audio) {
+        audio.volume = announcerVolume();
+      }
+    }
     try {
       storage?.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch {
@@ -523,9 +627,16 @@ export function createSfxEngine(
     return effectiveVolume() * BACKGROUND_MUSIC_GAIN;
   }
 
+  function announcerVolume(): number {
+    return Math.min(1, effectiveVolume() * ANNOUNCER_GAIN);
+  }
+
   function getDebugState(): SfxDebugState {
     return {
       ...settings,
+      announcerClipCount: [...announcerAudio.values()].filter(Boolean).length,
+      announcerLine: activeAnnouncement?.line ?? null,
+      announcerQueueLength: announcementQueue.length,
       ambientMonsterCount,
       contextState: context?.state ?? "uninitialized",
       effectCounts: { ...effectCounts },
@@ -537,10 +648,7 @@ export function createSfxEngine(
   function dispose(): void {
     disposed = true;
     settingsListeners.clear();
-    if (activeAnnouncements > 0) {
-      activeAnnouncements = 0;
-      speech?.cancel();
-    }
+    stopAnnouncements();
     backgroundMusic?.pause();
     backgroundMusic = null;
     musicPlaying = false;
@@ -557,7 +665,9 @@ export function createSfxEngine(
     unlock,
     startMusic,
     play,
+    announce,
     announceSummon,
+    announceResult,
     playLpTicks,
     playAnimation,
     setAmbientMonsterCount,
@@ -679,14 +789,6 @@ function browserStorage(): Pick<Storage, "getItem" | "setItem"> | null {
   }
 }
 
-function browserSpeechSynthesis(): Pick<SpeechSynthesis, "cancel" | "speak"> | null {
-  try {
-    return globalThis.speechSynthesis ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function createBrowserBackgroundMusic(source: string): HTMLAudioElement | null {
   try {
     return globalThis.Audio ? new globalThis.Audio(source) : null;
@@ -695,11 +797,12 @@ function createBrowserBackgroundMusic(source: string): HTMLAudioElement | null {
   }
 }
 
-function createBrowserUtterance(text: string): SpeechSynthesisUtterance {
-  if (!globalThis.SpeechSynthesisUtterance) {
-    throw new Error("SpeechSynthesis is not available");
+function createBrowserAnnouncerAudio(source: string): HTMLAudioElement | null {
+  try {
+    return globalThis.Audio ? new globalThis.Audio(source) : null;
+  } catch {
+    return null;
   }
-  return new globalThis.SpeechSynthesisUtterance(text);
 }
 
 function createBrowserAudioContext(): AudioContext {

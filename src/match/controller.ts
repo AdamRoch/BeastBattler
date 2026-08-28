@@ -433,10 +433,11 @@ export function mountMatch(
     options.sfx?.setAmbientMonsterCount(allMonsters(state).length);
     if (state.result && !resultSfxPlayed) {
       resultSfxPlayed = true;
-      const effect = mode === "ai" && state.result.winner !== HUMAN
-        ? "defeat"
-        : "victory";
-      options.sfx?.play(effect);
+      const outcome = mode === "hotseat"
+        ? "win"
+        : resultMessageFor(state.result, localPlayerId()).outcome;
+      options.sfx?.play(outcome === "win" ? "victory" : "defeat");
+      options.sfx?.announceResult(outcome);
     }
   }
 
