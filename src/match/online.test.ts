@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { assembleDeck, deriveExtraDeck } from "../cards/catalog";
 import type { OnlineMatchSession } from "../lobby/online-lobby";
-import { createMatch } from "../rules/core";
+import { createMatch, type PlayerId } from "../rules/core";
+import type { ClientMessage, ServerMessage } from "../server/protocol";
+import { RoomManager, type RoomConnection } from "../server/room-manager";
 import { filterMatchState } from "../server/state-filter";
 import { OnlineMatchClient, toLocalMatchState, type WebSocketLike } from "./online";
 
@@ -13,9 +15,11 @@ class TestSocket implements WebSocketLike {
   onclose: ((event: CloseEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   readonly sent: string[] = [];
+  outbound: ((message: Exclude<ClientMessage, { type: "hello" }>) => void) | null = null;
 
   send(data: string): void {
     this.sent.push(data);
+    this.outbound?.(JSON.parse(data) as Exclude<ClientMessage, { type: "hello" }>);
   }
 
   close(): void {
@@ -30,6 +34,17 @@ class TestSocket implements WebSocketLike {
 
   receive(message: unknown): void {
     this.onmessage?.({ data: JSON.stringify(message) } as MessageEvent<string>);
+  }
+}
+
+class ClientConnection implements RoomConnection {
+  readonly received: ServerMessage[] = [];
+
+  constructor(private readonly socket: TestSocket) {}
+
+  send(message: ServerMessage): void {
+    this.received.push(message);
+    this.socket.receive(message);
   }
 }
 
@@ -75,6 +90,69 @@ describe("toLocalMatchState", () => {
 });
 
 describe("OnlineMatchClient", () => {
+  it("keeps each real server seat in display-local coordinates through mulligans and turns", () => {
+    let sequence = 0;
+    const manager = new RoomManager({
+      random: () => 0.5,
+      newId: () => `id-${++sequence}`,
+      schedule: () => 0 as never,
+      cancel: () => {},
+    });
+    const firstSocket = new TestSocket();
+    const secondSocket = new TestSocket();
+    const firstConnection = new ClientConnection(firstSocket);
+    const secondConnection = new ClientConnection(secondSocket);
+    firstSocket.readyState = 1;
+    secondSocket.readyState = 1;
+    const first = new OnlineMatchClient(sessionFor(firstSocket, "Ada", "Lin", "player-1"), { arena: {} as never });
+    const second = new OnlineMatchClient(sessionFor(secondSocket, "Lin", "Ada", "player-2"), { arena: {} as never });
+    first.connect();
+    second.connect();
+
+    const firstToken = manager.connect(firstConnection, { type: "hello", version: 1, displayName: "Ada" });
+    const secondToken = manager.connect(secondConnection, { type: "hello", version: 1, displayName: "Lin" });
+    firstSocket.outbound = (message) => manager.receive(firstToken, message);
+    secondSocket.outbound = (message) => manager.receive(secondToken, message);
+    manager.receive(firstToken, { type: "lobby.create", name: "Perspective", archetype: "fire-water" });
+    const matchId = firstConnection.received.find((message) => message.type === "match.waiting")?.match.id;
+    if (!matchId) throw new Error("Missing waiting match");
+    manager.receive(secondToken, { type: "lobby.join", matchId, archetype: "earth-air" });
+
+    for (const client of [first, second]) {
+      const state = client.getState();
+      expect(client.localPlayerId()).toBe("player-1");
+      expect(state?.players[0].hand).toHaveLength(4);
+      expect(state?.players[0].hand.every((card) => card.name !== "Card back")).toBe(true);
+      expect(state?.players[1].hand).toHaveLength(4);
+      expect(state?.players[1].hand.every((card) => card.name === "Card back")).toBe(true);
+    }
+
+    first.sendIntent({ kind: "mulligan" });
+    second.sendIntent({ kind: "keep-hand" });
+    expect(first.getState()?.phase).toBe("main");
+    expect(second.getState()?.phase).toBe("main");
+
+    playFirstLand(first);
+    first.sendIntent({ kind: "advance-phase" });
+    first.sendIntent({ kind: "hold-attack" });
+    first.sendIntent({ kind: "advance-phase" });
+    expect(second.getState()?.activePlayer).toBe("player-1");
+    playFirstLand(second);
+
+    const firstResult = {
+      ...firstConnection.received.filter((message) => message.type === "match.state").at(-1)!.state,
+      result: { winner: "player-1" as PlayerId, loser: "player-2" as PlayerId, reason: "life" as const },
+    };
+    const secondResult = {
+      ...secondConnection.received.filter((message) => message.type === "match.state").at(-1)!.state,
+      result: { winner: "player-1" as PlayerId, loser: "player-2" as PlayerId, reason: "life" as const },
+    };
+    firstSocket.receive({ type: "match.state", matchId, state: firstResult });
+    secondSocket.receive({ type: "match.state", matchId, state: secondResult });
+    expect(first.getState()?.result).toMatchObject({ winner: "player-1", loser: "player-2" });
+    expect(second.getState()?.result).toMatchObject({ winner: "player-2", loser: "player-1" });
+  });
+
   it("accepts an authoritative automatic-draw snapshot that is already in main phase", () => {
     const socket = new TestSocket();
     socket.readyState = 1;
@@ -270,3 +348,26 @@ describe("OnlineMatchClient", () => {
     expect(returned).toBe(1);
   });
 });
+
+function sessionFor(
+  socket: TestSocket,
+  displayName: string,
+  opponentName: string,
+  playerId: PlayerId,
+): OnlineMatchSession {
+  return {
+    socket: socket as unknown as WebSocket,
+    displayName,
+    reconnectToken: `${displayName}-token`,
+    matchId: "id-3",
+    playerId,
+    opponentName,
+    playerArchetype: "fire-water",
+  };
+}
+
+function playFirstLand(client: OnlineMatchClient): void {
+  const land = client.getState()?.players[0].hand.find((card) => card.kind === "land");
+  if (!land) throw new Error("Expected the local hand to contain a land");
+  client.sendIntent({ kind: "play-land", cardId: land.instanceId });
+}
