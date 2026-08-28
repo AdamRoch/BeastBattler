@@ -27,6 +27,7 @@ import {
   responseWindowMessage,
   TARGETING_TIMEOUT_MS,
 } from "./controller";
+import { AI_PRESENTATION_BEAT_MS } from "./ai-presentation";
 
 vi.mock("../card-art", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../card-art")>();
@@ -149,6 +150,8 @@ describe("VS AI arena reconciliation", () => {
 
       vi.advanceTimersByTime(360);
       expect(controller.getState().responsePlayer).toBe("player-1");
+      expect(root.querySelector('[data-action="pass-response"]')).toBeNull();
+      vi.advanceTimersByTime(AI_PRESENTATION_BEAT_MS);
 
       // This mirrors a retired animation object that has survived its rules
       // permanent and would have made the old firstOpenSlot() path silently
