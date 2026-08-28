@@ -347,7 +347,7 @@ export function mountMatch(
           <small>${mode === "hotseat" ? `PLAYER ${priorityPlayer === HUMAN ? 1 : 2} PRIORITY` : state.activePlayer === HUMAN ? "YOUR PRIORITY" : "OPPONENT PRIORITY"}</small>
         </section>
         <section class="life-panel life-opponent" data-testid="opponent-life">
-          <span class="life-label">${mode === "hotseat" ? "PLAYER 2" : "AI"}</span>
+          <span class="life-label">${mode === "hotseat" ? "PLAYER 2" : mode === "online" ? "OPPONENT" : "AI"}</span>
           <strong>${playerTwo.life}</strong>
           <small>LP</small>
         </section>

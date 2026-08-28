@@ -79,8 +79,8 @@ export function startOnlineMatch(
   let statusText = "";
   let timers: readonly DecisionTimer[] = [];
   const renderStatus = () => {
-    const timer = timers.find((candidate) => candidate.playerId === client.localPlayerId()) ?? timers[0];
-    const timerText = timer ? formatTimer(timer, client.localPlayerId(), client.currentTime()) : "";
+    const timer = timers.find((candidate) => candidate.playerId === client.serverPlayerId()) ?? timers[0];
+    const timerText = timer ? formatTimer(timer, client.serverPlayerId(), client.currentTime()) : "";
     status.hidden = statusText.length === 0 && timerText.length === 0;
     status.textContent = statusText || timerText;
     status.classList.toggle("is-countdown", timer?.stage === "countdown");
@@ -140,7 +140,8 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
   private readonly reconnectingFromStoredToken: boolean;
   private reconnectToken: ReconnectToken | undefined;
   private matchId: MatchId | undefined;
-  private playerId: PlayerId | null = null;
+  /** Server seat IDs address the RoomManager and must never select UI sides. */
+  private serverPlayer: PlayerId | null = null;
   private state: MatchState | null = null;
   private disposed = false;
 
@@ -158,15 +159,20 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
     this.reconnectingFromStoredToken = !session.reconnectToken && Boolean(storedToken);
     this.adoptedSocket = session.socket;
     this.matchId = session.matchId;
-    this.playerId = session.playerId;
+    this.serverPlayer = session.playerId;
   }
 
   getState(): MatchState | null {
     return this.state;
   }
 
-  localPlayerId(): PlayerId | null {
-    return this.playerId;
+  /** Every filtered snapshot maps this browser to display player-1. */
+  localPlayerId(): PlayerId {
+    return "player-1";
+  }
+
+  serverPlayerId(): PlayerId | null {
+    return this.serverPlayer;
   }
 
   currentTime(): number {
@@ -212,7 +218,7 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
   }
 
   sendIntent(intent: MatchIntent): void {
-    this.send({ type: "match.intent", intent: fromDisplayIntent(intent, this.playerId) });
+    this.send({ type: "match.intent", intent: fromDisplayIntent(intent, this.serverPlayer) });
   }
 
   requestRematch(): void {
@@ -246,7 +252,7 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
         return;
       case "match.started":
         this.matchId = message.matchId;
-        this.playerId = message.playerId;
+        this.serverPlayer = message.playerId;
         this.storage?.setItem(tokenKey(message.matchId), this.reconnectToken ?? "");
         this.reconnectStartedAt = null;
         this.publish({ notice: `Matched with ${message.opponentName}.` });
@@ -265,7 +271,7 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
       case "match.paused":
         if (!this.acceptsMatch(message.matchId)) return;
         this.reconnectStartedAt = this.now();
-        this.publish({ notice: pauseNotice(message, this.playerId, this.now()) });
+        this.publish({ notice: pauseNotice(message, this.serverPlayer, this.now()) });
         this.schedulePauseCountdown(message);
         return;
       case "match.resumed":
@@ -275,15 +281,15 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
         return;
       case "match.ended":
         if (!this.acceptsMatch(message.matchId)) return;
-        this.publish({ notice: endNotice(message, this.playerId) });
-        if (message.reason === "forfeit" && message.winner === this.playerId) {
+        this.publish({ notice: endNotice(message, this.serverPlayer) });
+        if (message.reason === "forfeit" && message.winner === this.serverPlayer) {
           this.returnTimer = this.schedule(() => this.deps.onReturnToLobby?.(), 1_800);
         }
         return;
       case "match.rematch-status":
         if (!this.acceptsMatch(message.matchId)) return;
         this.publish({
-          notice: message.acceptedBy.includes(this.playerId ?? "player-1")
+          notice: message.acceptedBy.includes(this.serverPlayer ?? "player-1")
             ? "Rematch accepted. Waiting for your opponent."
             : "Your opponent wants a rematch.",
         });
@@ -310,7 +316,7 @@ export class OnlineMatchClient implements OnlineMatchAdapter {
   private schedulePauseCountdown(message: Extract<ServerMessage, { type: "match.paused" }>): void {
     const update = () => {
       if (this.disposed || this.reconnectStartedAt === null) return;
-      this.publish({ notice: pauseNotice(message, this.playerId, this.now()) });
+      this.publish({ notice: pauseNotice(message, this.serverPlayer, this.now()) });
       const remaining = message.reconnectDeadline - this.now();
       if (remaining > 0) this.schedule(update, 1_000);
     };
