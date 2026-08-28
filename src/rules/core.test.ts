@@ -97,19 +97,17 @@ describe("match setup and turn flow", () => {
     );
 
     state = keepHand(state, "player-2");
-    expect(state.phase).toBe("draw");
+    expect(state.phase).toBe("main");
     expect(state.turnNumber).toBe(1);
   });
 
-  it("follows draw, main, combat, end with no second main phase", () => {
+  it("automatically enters main after mulligans, then follows combat and end", () => {
     let state = startMatch();
 
     expect(state.activePlayer).toBe("player-1");
-    expect(state.phase).toBe("draw");
+    expect(state.phase).toBe("main");
     expect(getPlayer(state, "player-1").hand).toHaveLength(4);
 
-    state = advancePhase(state);
-    expect(state.phase).toBe("main");
     state = advancePhase(state);
     expect(state.phase).toBe("combat");
     state = advancePhase(state);
@@ -117,7 +115,7 @@ describe("match setup and turn flow", () => {
     state = advancePhase(state);
 
     expect(state.activePlayer).toBe("player-2");
-    expect(state.phase).toBe("draw");
+    expect(state.phase).toBe("main");
     expect(state.turnNumber).toBe(2);
     expect(getPlayer(state, "player-2").hand).toHaveLength(5);
   });
@@ -127,7 +125,6 @@ describe("match setup and turn flow", () => {
     const fireMonster = monster("human-monster", "fire");
     let state = startMatch(makeDeck("p1", [fireLand, fireMonster]));
 
-    state = advancePhase(state);
     state = playLand(state, "player-1", fireLand.instanceId);
     state = summonMonster(state, "player-1", fireMonster.instanceId);
     state = passResponse(state, "player-2");
@@ -146,7 +143,7 @@ describe("match setup and turn flow", () => {
     const monsterOnNextTurn = getPlayer(state, "player-1").monsters[0];
     expect(state).toMatchObject({
       activePlayer: "player-1",
-      phase: "draw",
+      phase: "main",
       turnNumber: 3,
     });
     expect(monsterOnNextTurn.summoningSick).toBe(false);
@@ -161,7 +158,6 @@ describe("lands and mana", () => {
     let state = startMatch(
       makeDeck("p1", [fireLand, waterMonster]),
     );
-    state = advancePhase(state);
     state = playLand(state, "player-1", fireLand.instanceId);
 
     expect(availableMana(state, "player-1")).toMatchObject({
@@ -188,7 +184,6 @@ describe("lands and mana", () => {
         thirdMonster,
       ]),
     );
-    state = advancePhase(state);
     state = playLand(state, "player-1", fireLandOne.instanceId);
 
     expect(availableMana(state, "player-1").fire).toBe(1);
@@ -208,8 +203,6 @@ describe("lands and mana", () => {
 
     state = passTurn(state);
     state = passTurn(state);
-    state = advancePhase(state);
-
     expect(availableMana(state, "player-1").fire).toBe(1);
     state = playLand(state, "player-1", fireLandTwo.instanceId);
     state = summonMonster(state, "player-1", secondMonster.instanceId);
@@ -228,7 +221,6 @@ describe("hand limits", () => {
     state = drawCards(state, "player-1", 4);
     state = advancePhase(state);
     state = advancePhase(state);
-    state = advancePhase(state);
 
     expect(getPlayer(state, "player-1").hand).toHaveLength(8);
     expect(() => advancePhase(state)).toThrow("Discard down to seven");
@@ -240,6 +232,28 @@ describe("hand limits", () => {
     expect(getPlayer(state, "player-1").hand).toHaveLength(7);
     expect(getPlayer(state, "player-1").discardPile).toContain(cardToDiscard);
     expect(state.activePlayer).toBe("player-2");
+  });
+
+  it("ends the match during the automatic draw when the next deck is empty", () => {
+    let state = startMatch();
+    state = advancePhase(state);
+    state = advancePhase(state);
+    state = {
+      ...state,
+      players: [
+        state.players[0],
+        { ...state.players[1], deck: [] },
+      ],
+    };
+
+    state = advancePhase(state);
+
+    expect(state.result).toEqual({
+      winner: "player-1",
+      loser: "player-2",
+      reason: "deck-out",
+    });
+    expect(state.phase).toBe("end");
   });
 });
 

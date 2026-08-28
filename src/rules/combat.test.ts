@@ -215,7 +215,6 @@ function combatState(
   state = keepHand(state, "player-1");
   state = keepHand(state, "player-2");
   state = advancePhase(state);
-  state = advancePhase(state);
 
   return {
     ...state,

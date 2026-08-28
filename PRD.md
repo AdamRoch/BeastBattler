@@ -33,18 +33,18 @@ A simplified collectible card battler in the browser — Magic: The Gathering's 
 - Each player starts at **10 LP**.
 - Decks are **20 cards** (see §7 for formula assembly).
 - Starting hand: **4 cards**. Each player gets **one free mulligan** per match (shuffle hand back, draw 4, no penalty).
-- Draw 1 card per turn at the start of the turn. **The first player skips their first-turn draw.**
+- Draw 1 card per turn automatically at the start of the turn. **The first player skips their first-turn draw.**
 - Max hand size **7** — discard down at end of turn.
 - If you must draw from an empty deck, **you lose**.
 
 ### 4.2 Turn structure
 
-Four phases, in order:
+Three playable phases, in order. The rules core resolves the mandatory draw
+before main phase, so players never advance a draw phase themselves:
 
-1. **Draw** (first player skips on turn 1)
-2. **Main** — play a land, summon monsters, cast spells, perform fusion actions
-3. **Combat** — declare attackers, defender assigns blockers, resolve damage
-4. **End** — clear all damage from monsters, discard down to 7
+1. **Main** — play a land, summon monsters, cast spells, perform fusion actions
+2. **Combat** — declare attackers, defender assigns blockers, resolve damage
+3. **End** — clear all damage from monsters, discard down to 7
 
 There is no second main phase.
 

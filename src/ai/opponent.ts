@@ -133,10 +133,6 @@ export function runAiTurn(
     switch (state.phase) {
       case "mulligan":
         return result(state, actions, "not-ai-turn");
-      case "draw":
-        actions.push({ kind: "advance-phase" });
-        state = advancePhase(state);
-        continue;
       case "main": {
         const action = chooseMainPhaseAction(state, aiPlayer);
         actions.push(action);

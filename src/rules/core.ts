@@ -8,7 +8,7 @@ export const ELEMENTS = [
 
 export type Element = (typeof ELEMENTS)[number];
 export type PlayerId = "player-1" | "player-2";
-export type TurnPhase = "draw" | "main" | "combat" | "end";
+export type TurnPhase = "main" | "combat" | "end";
 export type MatchPhase = "mulligan" | TurnPhase;
 export type MulliganDecision = "pending" | "kept" | "mulliganed";
 
@@ -252,8 +252,6 @@ export function advancePhase(state: MatchState): MatchState {
   switch (state.phase) {
     case "mulligan":
       throw new RulesError("Both players must choose a mulligan action first");
-    case "draw":
-      return { ...state, phase: "main" };
     case "main":
       return { ...state, phase: "combat" };
     case "combat":
@@ -481,7 +479,7 @@ function startTurnsWhenReady(state: MatchState): MatchState {
   return {
     ...state,
     activePlayer: state.firstPlayer,
-    phase: "draw",
+    phase: "main",
     turnNumber: 1,
   };
 }
@@ -517,11 +515,15 @@ function beginNextTurn(state: MatchState): MatchState {
   const nextTurnState: MatchState = {
     ...readiedState,
     activePlayer: nextPlayerId,
-    phase: "draw",
     turnNumber: state.turnNumber + 1,
   };
 
-  return drawCards(nextTurnState, nextPlayerId, 1);
+  const drawnState = drawCards(nextTurnState, nextPlayerId, 1);
+  if (drawnState.result) {
+    return drawnState;
+  }
+
+  return { ...drawnState, phase: "main" };
 }
 
 function clearMonsterDamage(player: PlayerState): PlayerState {

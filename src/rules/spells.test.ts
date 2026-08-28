@@ -429,7 +429,6 @@ function mainPhaseState(options: StateOptions): MatchState {
   let state = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
   state = keepHand(state, "player-1");
   state = keepHand(state, "player-2");
-  state = advancePhase(state);
 
   return {
     ...state,

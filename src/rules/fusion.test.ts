@@ -302,7 +302,6 @@ function mainPhaseState(
   });
   state = keepHand(state, "player-1");
   state = keepHand(state, "player-2");
-  state = advancePhase(state);
   return withMonsters(state, "player-1", monsters);
 }
 
