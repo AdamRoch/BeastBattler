@@ -5,6 +5,8 @@ import * as THREE from "three";
 import {
   assembleDeck,
   deriveExtraDeck,
+  type ArchetypeId,
+  type BaseMonsterId,
   type BaseMonsterCard,
 } from "../cards/catalog";
 import { createArenaScene } from "../arena";
@@ -385,6 +387,74 @@ describe("spell targeting guidance", () => {
   });
 });
 
+describe("Reach beast fusion prompts", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it.each([
+    {
+      archetype: "fire-water" as const,
+      first: "ember-imp" as const,
+      second: "cinder-wall" as const,
+      expected: "Inferno Beast",
+    },
+    {
+      archetype: "fire-earth" as const,
+      first: "stone-bull" as const,
+      second: "moss-tortoise" as const,
+      expected: "Golem Beast",
+    },
+  ])(
+    "offers $expected when $second is one of the parents",
+    ({ archetype, first, second, expected }) => {
+      const root = document.createElement("div");
+      document.body.append(root);
+      const controller = mountMatch(root, createArenaScene(16 / 9), {
+        mode: "ai",
+        playerOneArchetype: archetype,
+        initialState: reachFusionState(archetype, first, second),
+      });
+
+      const prompt = root.querySelector<HTMLElement>("[data-testid=fusion-prompt]");
+      expect(prompt?.textContent).toContain(expected);
+      expect(prompt?.textContent).toContain("Both beasts are consumed");
+      controller.dispose();
+    },
+  );
+
+  it("explains that a spent fusion result cannot be summoned again", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const state = reachFusionState(
+      "fire-water",
+      "ember-imp",
+      "cinder-wall",
+      "Inferno Beast",
+    );
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      playerOneArchetype: "fire-water",
+      initialState: state,
+    });
+
+    expect(root.querySelector("[data-testid=fusion-prompt]")).toBeNull();
+    const inferno = [...root.querySelectorAll<HTMLElement>(".extra-card")].find(
+      (card) => card.textContent?.includes("Inferno Beast"),
+    );
+    expect(inferno?.classList.contains("is-spent")).toBe(true);
+    inferno?.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 120,
+      clientY: 140,
+    }));
+    expect(root.querySelector("[data-testid=monster-tooltip]")?.textContent).toContain(
+      "Already used: this fusion cannot be summoned from the extra deck again this match.",
+    );
+    controller.dispose();
+  });
+});
+
 function pendingSpell(controller: "player-1" | "player-2" = "player-2"): PendingStackItem {
   const card = assembleDeck("fire-water").find(
     (candidate) => candidate.kind === "spell" && candidate.id === "bolt",
@@ -552,6 +622,45 @@ function spellTargetingState(): MatchState {
   });
   return withPlayer(state, "player-2", {
     monsters: [permanent(tide, "targeting-enemy")],
+    mulliganDecision: "kept",
+  });
+}
+
+function reachFusionState(
+  archetype: ArchetypeId,
+  firstId: BaseMonsterId,
+  secondId: BaseMonsterId,
+  spentFusionName?: string,
+): MatchState {
+  const deck = assembleDeck(archetype);
+  const findBase = (id: BaseMonsterId): BaseMonsterCard => {
+    const card = deck.find(
+      (candidate): candidate is BaseMonsterCard =>
+        candidate.kind === "monster" &&
+        candidate.category === "base-monster" &&
+        candidate.id === id,
+    );
+    if (!card) throw new Error(`Missing ${id} fusion fixture`);
+    return card;
+  };
+  const extraDeck = deriveExtraDeck(archetype).filter(
+    (card) => card.name !== spentFusionName,
+  );
+  let state = createMatch({
+    playerOneDeck: deck,
+    playerTwoDeck: deck,
+    playerOneExtraDeck: deriveExtraDeck(archetype),
+    playerTwoExtraDeck: deriveExtraDeck(archetype),
+  });
+  state = { ...state, activePlayer: "player-1", phase: "main", turnNumber: 3 };
+  return withPlayer(state, "player-1", {
+    hand: [],
+    monsters: [
+      permanent(findBase(firstId), "reach-fusion-parent-1"),
+      permanent(findBase(secondId), "reach-fusion-parent-2"),
+    ],
+    extraDeck,
+    landPlayedThisTurn: true,
     mulliganDecision: "kept",
   });
 }
