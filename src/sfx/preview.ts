@@ -13,7 +13,7 @@ if (!app) {
   throw new Error("Missing #sfx-preview root");
 }
 
-const engine = createSfxEngine();
+const engine = createSfxEngine({ backgroundMusicSource: null });
 const unbindGestures = bindSfxToUserGestures(document, engine);
 const controls = mountSfxControls(app, engine);
 const effectGrid = document.createElement("section");

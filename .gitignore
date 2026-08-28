@@ -5,3 +5,5 @@ dist/
 tsconfig.tsbuildinfo
 .DS_Store
 /video.mov
+/background music.mp3
+/voice-acting.m4a
