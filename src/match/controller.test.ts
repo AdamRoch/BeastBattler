@@ -188,6 +188,120 @@ describe("hand-card keywords", () => {
   });
 });
 
+describe("contextual tutorials", () => {
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it("explains the free mulligan and exposes monster rules from the hand", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const deck = assembleDeck("fire-lightning");
+    const voltBat = deck.find(
+      (card): card is BaseMonsterCard =>
+        card.kind === "monster" &&
+        card.category === "base-monster" &&
+        card.name === "Volt Bat",
+    );
+    if (!voltBat) throw new Error("Missing Volt Bat fixture");
+    const base = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
+    const state: MatchState = {
+      ...base,
+      players: [
+        { ...base.players[0], hand: [voltBat] },
+        base.players[1],
+      ],
+    };
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      playerOneArchetype: "fire-lightning",
+      initialState: state,
+    });
+
+    expect(root.querySelector("[data-testid=mulligan-prompt]")?.textContent).toContain(
+      "replace all four cards once",
+    );
+    const trigger = root.querySelector<HTMLElement>(
+      `[data-monster-tooltip-card-id="${voltBat.instanceId}"]`,
+    );
+    trigger?.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 120,
+      clientY: 160,
+    }));
+
+    const tooltip = root.querySelector<HTMLElement>("[data-testid=monster-tooltip]");
+    expect(tooltip?.hidden).toBe(false);
+    expect(tooltip?.textContent).toContain("Volt Bat");
+    expect(tooltip?.textContent).toContain("IN HAND");
+    expect(tooltip?.textContent).toContain(
+      "Flying: Can be blocked only by Flying or Reach creatures.",
+    );
+    controller.dispose();
+  });
+
+  it("exposes fusion rules from the extra deck", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      playerOneArchetype: "fire-water",
+    });
+    const trigger = root.querySelector<HTMLElement>(
+      ".extra-card[data-monster-tooltip-card-id]",
+    );
+    trigger?.dispatchEvent(new MouseEvent("pointermove", {
+      bubbles: true,
+      clientX: 160,
+      clientY: 140,
+    }));
+
+    const tooltip = root.querySelector<HTMLElement>("[data-testid=monster-tooltip]");
+    expect(tooltip?.hidden).toBe(false);
+    expect(tooltip?.textContent).toContain("EXTRA DECK");
+    expect(tooltip?.textContent).toContain(
+      "Trample: excess combat damage hits the defending player.",
+    );
+    controller.dispose();
+  });
+
+  it("keeps the next-phase instruction visible and labels land totals", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const deck = assembleDeck("fire-water");
+    const land = deck.find(
+      (card): card is LandCard => card.kind === "land" && card.element === "fire",
+    );
+    if (!land) throw new Error("Missing Fire land fixture");
+    const base = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
+    const state = withPlayer(
+      { ...base, activePlayer: "player-1", phase: "main", turnNumber: 2 },
+      "player-1",
+      {
+        hand: [{ ...land, instanceId: "land-in-hand" }],
+        lands: [
+          readyLand(land, "ready-land-1"),
+          readyLand(land, "ready-land-2"),
+        ],
+        landPlayedThisTurn: false,
+        mulliganDecision: "kept",
+      },
+    );
+    const controller = mountMatch(root, createArenaScene(16 / 9), {
+      mode: "ai",
+      initialState: state,
+    });
+
+    expect(root.querySelector("[data-testid=phase-guidance]")?.textContent).toContain(
+      "play one land each turn",
+    );
+    expect(root.querySelector(".board-player .land-count")?.textContent).toBe(
+      "2 LANDS · 2 READY",
+    );
+    controller.dispose();
+  });
+});
+
 function pendingSpell(controller: "player-1" | "player-2" = "player-2"): PendingStackItem {
   const card = assembleDeck("fire-water").find(
     (candidate) => candidate.kind === "spell" && candidate.id === "bolt",

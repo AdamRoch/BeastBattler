@@ -115,6 +115,65 @@ describe("tutorial coach marks", () => {
     expect(tracker.dismissForCard(land.instanceId)).toBe(true);
     expect(tracker.update(mainPhase(state), "player-1")).toBeNull();
   });
+
+  it("explains combat once when the local player has a ready attacker", () => {
+    const monster = findFireMonster();
+    const tracker = createCoachMarkTracker();
+    const state = withPlayer(
+      {
+        ...matchState(),
+        activePlayer: "player-1",
+        phase: "combat",
+        turnNumber: 2,
+      },
+      "player-1",
+      {
+        monsters: [{
+          card: monster,
+          damage: 0,
+          summonedOnTurn: 1,
+          summoningSick: false,
+        }],
+      },
+    );
+
+    expect(tracker.update(state, "player-1")).toMatchObject({
+      kind: "combat-basics",
+      message:
+        "Choose your attackers. Extra ATK beyond a blocker's remaining HP hits the opponent.",
+      cardIds: [],
+    });
+    tracker.dismiss();
+    expect(tracker.update(state, "player-1")).toBeNull();
+    tracker.reset();
+    expect(tracker.update(state, "player-1")).toMatchObject({
+      kind: "combat-basics",
+    });
+  });
+
+  it("waits to explain combat until a monster can attack", () => {
+    const monster = findFireMonster();
+    const tracker = createCoachMarkTracker();
+    const state = withPlayer(
+      {
+        ...matchState(),
+        activePlayer: "player-1",
+        phase: "combat",
+        turnNumber: 1,
+      },
+      "player-1",
+      {
+        monsters: [{
+          card: monster,
+          damage: 0,
+          summonedOnTurn: 1,
+          summoningSick: true,
+        }],
+      },
+    );
+
+    expect(tracker.update(state, "player-1")).toBeNull();
+  });
 });
 
 describe("coach-mark targets", () => {
