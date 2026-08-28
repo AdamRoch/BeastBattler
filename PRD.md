@@ -246,6 +246,9 @@ full-screen rules lecture before the match.
 
 Required match guidance:
 
+- **Battlefield zones identify themselves.** A subtle, persistent **BEAST
+  ZONE** label sits on the table beside each player's three beast slots so a
+  new player can connect the rules language to the circles on the battlefield.
 - **Phase progression stays visible.** Whenever the local player can act, the
   action area states what the current phase allows and names the control that
   advances or ends it. This is persistent guidance, not a toast that vanishes
