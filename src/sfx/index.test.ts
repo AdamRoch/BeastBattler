@@ -48,14 +48,91 @@ describe("procedural sound effects", () => {
   });
 
   it("loads, clamps, and falls back from persisted settings", () => {
-    expect(readSfxSettings(null)).toEqual({ muted: false, volume: 1 });
+    expect(readSfxSettings(null)).toEqual({
+      muted: false,
+      volume: 1,
+      musicVolume: 1,
+      voiceVolume: 1,
+      effectsVolume: 1,
+    });
     expect(readSfxSettings({
       getItem: () => JSON.stringify({ muted: true, volume: 4 }),
-    })).toEqual({ muted: true, volume: 1 });
+    })).toEqual({
+      muted: true,
+      volume: 1,
+      musicVolume: 1,
+      voiceVolume: 1,
+      effectsVolume: 1,
+    });
     expect(readSfxSettings({ getItem: () => "not-json" })).toEqual({
       muted: false,
       volume: 1,
+      musicVolume: 1,
+      voiceVolume: 1,
+      effectsVolume: 1,
     });
+  });
+
+  it("multiplies channels with the master setting and persists them", async () => {
+    const music = fakeBackgroundMusic();
+    const storage = fakeStorage();
+    const { audios, factory } = fakeAnnouncerAudio();
+    const engine = createSfxEngine({
+      announcerAudioFactory: factory,
+      audioContextFactory: fakeAudioContext,
+      backgroundMusicFactory: () => music,
+      storage,
+    });
+
+    await engine.unlock();
+    engine.setVolume(0.5);
+    engine.setMusicVolume(0.5);
+    engine.setVoiceVolume(0.5);
+    engine.setEffectsVolume(0.25);
+
+    expect(music.volume).toBeCloseTo(0.04);
+    expect(audios.get(ANNOUNCER_CLIPS.victory)?.volume).toBeCloseTo(0.375);
+    expect(engine.getSettings()).toMatchObject({
+      volume: 0.5,
+      musicVolume: 0.5,
+      voiceVolume: 0.5,
+      effectsVolume: 0.25,
+    });
+    expect(JSON.parse(storage.value ?? "{}")).toMatchObject({
+      muted: false,
+      volume: 0.5,
+      musicVolume: 0.5,
+      voiceVolume: 0.5,
+      effectsVolume: 0.25,
+    });
+    engine.dispose();
+  });
+
+  it("ducks music for a voice queue and restores only after the last line", async () => {
+    vi.useFakeTimers();
+    const music = fakeBackgroundMusic();
+    const { audios, factory } = fakeAnnouncerAudio();
+    const engine = createSfxEngine({
+      announcerAudioFactory: factory,
+      audioContextFactory: fakeAudioContext,
+      backgroundMusicFactory: () => music,
+      storage: null,
+    });
+    await engine.unlock();
+
+    engine.announceResult("loss");
+    await settleMusicFade();
+    expect(music.volume).toBeLessThan(0.16);
+    const duckedVolume = music.volume;
+
+    finishAudio(audios.get(ANNOUNCER_CLIPS.defeat));
+    await settleMusicFade();
+    expect(music.volume).toBeLessThan(0.16);
+
+    finishAudio(audios.get(ANNOUNCER_CLIPS["banished-to-the-shadow-realm"]));
+    expect(music.volume).toBeGreaterThan(duckedVolume);
+    engine.dispose();
+    vi.useRealTimers();
   });
 
   it("does nothing safely before the first gesture", () => {
@@ -228,6 +305,35 @@ function fakeAnnouncerAudio(): {
 function finishAudio(audio: AnnouncerAudioElement | undefined): void {
   const onended = audio?.onended as (() => void) | null | undefined;
   onended?.();
+}
+
+function fakeBackgroundMusic() {
+  return {
+    loop: false,
+    preload: "none",
+    volume: 1,
+    play: vi.fn().mockResolvedValue(undefined),
+    pause: vi.fn(),
+  };
+}
+
+function fakeStorage(): { value: string | null; getItem: () => string | null; setItem: (key: string, value: string) => void } {
+  let value: string | null = null;
+  return {
+    get value() {
+      return value;
+    },
+    getItem: () => value,
+    setItem: (_key, nextValue) => {
+      value = nextValue;
+    },
+  };
+}
+
+async function settleMusicFade(): Promise<void> {
+  for (let frame = 0; frame < 20; frame += 1) {
+    await vi.advanceTimersByTimeAsync(20);
+  }
 }
 
 function fakeAudioContext(): AudioContext {

@@ -31,6 +31,9 @@ export type SfxEffect = (typeof SFX_EFFECTS)[number];
 export interface SfxSettings {
   readonly muted: boolean;
   readonly volume: number;
+  readonly musicVolume: number;
+  readonly voiceVolume: number;
+  readonly effectsVolume: number;
 }
 
 export interface SfxDebugState extends SfxSettings {
@@ -59,6 +62,9 @@ export interface SfxEngine {
   setAmbientMonsterCount(count: number): void;
   setMuted(muted: boolean): void;
   setVolume(volume: number): void;
+  setMusicVolume(volume: number): void;
+  setVoiceVolume(volume: number): void;
+  setEffectsVolume(volume: number): void;
   getSettings(): SfxSettings;
   getDebugState(): SfxDebugState;
   onSettingsChange(listener: (settings: SfxSettings) => void): () => void;
@@ -92,10 +98,19 @@ interface BackgroundMusicElement {
 }
 
 const STORAGE_KEY = "beast-battler:sfx:v1";
-const DEFAULT_SETTINGS: SfxSettings = { muted: false, volume: 1 };
+const DEFAULT_SETTINGS: SfxSettings = {
+  muted: false,
+  volume: 1,
+  musicVolume: 1,
+  voiceVolume: 1,
+  effectsVolume: 1,
+};
 const BACKGROUND_MUSIC_SOURCE = "/audio/background-music.mp3";
 const BACKGROUND_MUSIC_GAIN = 0.16;
 const ANNOUNCER_GAIN = 1.5;
+const MUSIC_DUCK_GAIN = 0.35;
+const MUSIC_FADE_DURATION_MS = 140;
+const MUSIC_FADE_FRAME_MS = 20;
 const SILENCE = 0.0001;
 const WARP_FALLBACK_DELAY_SECONDS = 0.14;
 
@@ -114,6 +129,9 @@ export function readSfxSettings(
     return {
       muted: typeof parsed.muted === "boolean" ? parsed.muted : false,
       volume: normalizeVolume(parsed.volume),
+      musicVolume: normalizeVolume(parsed.musicVolume),
+      voiceVolume: normalizeVolume(parsed.voiceVolume),
+      effectsVolume: normalizeVolume(parsed.effectsVolume),
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -161,10 +179,12 @@ export function createSfxEngine(
   let settings = readSfxSettings(storage);
   let context: AudioContext | null = null;
   let masterGain: GainNode | null = null;
+  let effectsGain: GainNode | null = null;
   let ambientGain: GainNode | null = null;
   let backgroundMusic: BackgroundMusicElement | null | undefined;
   let musicPlaying = false;
   let musicRequest: Promise<boolean> | null = null;
+  let musicFadeTimer: ReturnType<typeof setTimeout> | null = null;
   let ambientMonsterCount = 0;
   let disposed = false;
   const announcerAudio = new Map<AnnouncerLine, AnnouncerAudioElement | null>();
@@ -254,7 +274,10 @@ export function createSfxEngine(
     masterGain = context.createGain();
     masterGain.gain.value = effectiveVolume();
     masterGain.connect(context.destination);
-    createAmbientNodes(context, masterGain);
+    effectsGain = context.createGain();
+    effectsGain.gain.value = settings.effectsVolume;
+    effectsGain.connect(masterGain);
+    createAmbientNodes(context, effectsGain);
   }
 
   function createAmbientNodes(
@@ -355,6 +378,7 @@ export function createSfxEngine(
       return;
     }
     announcementQueue.push({ line, onComplete });
+    setMusicDucked(true);
     playNextAnnouncement();
   }
 
@@ -388,6 +412,7 @@ export function createSfxEngine(
         queued.onComplete?.();
         playNextAnnouncement();
       }
+      setMusicDucked(activeAnnouncement !== null || announcementQueue.length > 0);
     };
     const finishAnnouncement = () => settleAnnouncement(true);
     const cancelAnnouncement = () => {
@@ -413,10 +438,10 @@ export function createSfxEngine(
 
   function stopAnnouncements(): void {
     announcementQueue.length = 0;
-    if (!activeAnnouncement) {
-      return;
+    if (activeAnnouncement) {
+      activeAnnouncement.cancel();
     }
-    activeAnnouncement.cancel();
+    setMusicDucked(false);
   }
 
   function playLpTicks(count: number): void {
@@ -427,13 +452,13 @@ export function createSfxEngine(
   }
 
   function scheduleEffect(effect: SfxEffect, delay: number): void {
-    if (!context || !masterGain || disposed) {
+    if (!context || !effectsGain || disposed) {
       return;
     }
     try {
       effectCounts[effect] += 1;
       const start = context.currentTime + 0.006 + delay;
-      synthesize(effect, context, masterGain, start);
+      synthesize(effect, context, effectsGain, start);
     } catch {
       // Audio must never interrupt the match if a browser rejects a node.
     }
@@ -593,6 +618,21 @@ export function createSfxEngine(
     applySettings();
   }
 
+  function setMusicVolume(volume: number): void {
+    settings = { ...settings, musicVolume: normalizeVolume(volume) };
+    applySettings();
+  }
+
+  function setVoiceVolume(volume: number): void {
+    settings = { ...settings, voiceVolume: normalizeVolume(volume) };
+    applySettings();
+  }
+
+  function setEffectsVolume(volume: number): void {
+    settings = { ...settings, effectsVolume: normalizeVolume(volume) };
+    applySettings();
+  }
+
   function applySettings(): void {
     if (context && masterGain) {
       masterGain.gain.setTargetAtTime(
@@ -601,8 +641,15 @@ export function createSfxEngine(
         0.025,
       );
     }
+    if (context && effectsGain) {
+      effectsGain.gain.setTargetAtTime(
+        settings.effectsVolume,
+        context.currentTime,
+        0.025,
+      );
+    }
     if (backgroundMusic) {
-      backgroundMusic.volume = backgroundMusicVolume();
+      setMusicVolumeImmediately();
     }
     for (const audio of announcerAudio.values()) {
       if (audio) {
@@ -624,11 +671,58 @@ export function createSfxEngine(
   }
 
   function backgroundMusicVolume(): number {
-    return effectiveVolume() * BACKGROUND_MUSIC_GAIN;
+    return effectiveVolume() * settings.musicVolume * BACKGROUND_MUSIC_GAIN;
   }
 
   function announcerVolume(): number {
-    return Math.min(1, effectiveVolume() * ANNOUNCER_GAIN);
+    return Math.min(1, effectiveVolume() * settings.voiceVolume * ANNOUNCER_GAIN);
+  }
+
+  function desiredMusicVolume(): number {
+    const ducked = activeAnnouncement !== null || announcementQueue.length > 0;
+    return backgroundMusicVolume() * (ducked ? MUSIC_DUCK_GAIN : 1);
+  }
+
+  function setMusicDucked(ducked: boolean): void {
+    if (!backgroundMusic || disposed) {
+      return;
+    }
+    fadeMusicTo(backgroundMusicVolume() * (ducked ? MUSIC_DUCK_GAIN : 1));
+  }
+
+  function setMusicVolumeImmediately(): void {
+    if (!backgroundMusic) {
+      return;
+    }
+    if (musicFadeTimer !== null) {
+      clearTimeout(musicFadeTimer);
+      musicFadeTimer = null;
+    }
+    backgroundMusic.volume = desiredMusicVolume();
+  }
+
+  function fadeMusicTo(target: number): void {
+    const audio = backgroundMusic;
+    if (!audio) {
+      return;
+    }
+    if (musicFadeTimer !== null) {
+      clearTimeout(musicFadeTimer);
+      musicFadeTimer = null;
+    }
+    const initial = audio.volume;
+    let elapsed = 0;
+    const tick = () => {
+      elapsed += MUSIC_FADE_FRAME_MS;
+      const progress = Math.min(1, elapsed / MUSIC_FADE_DURATION_MS);
+      audio.volume = initial + (target - initial) * progress;
+      if (progress < 1 && !disposed) {
+        musicFadeTimer = setTimeout(tick, MUSIC_FADE_FRAME_MS);
+      } else {
+        musicFadeTimer = null;
+      }
+    };
+    tick();
   }
 
   function getDebugState(): SfxDebugState {
@@ -653,11 +747,16 @@ export function createSfxEngine(
     backgroundMusic = null;
     musicPlaying = false;
     musicRequest = null;
+    if (musicFadeTimer !== null) {
+      clearTimeout(musicFadeTimer);
+      musicFadeTimer = null;
+    }
     if (context && context.state !== "closed") {
       void context.close().catch(() => undefined);
     }
     context = null;
     masterGain = null;
+    effectsGain = null;
     ambientGain = null;
   }
 
@@ -673,6 +772,9 @@ export function createSfxEngine(
     setAmbientMonsterCount,
     setMuted,
     setVolume,
+    setMusicVolume,
+    setVoiceVolume,
+    setEffectsVolume,
     getSettings: () => settings,
     getDebugState,
     onSettingsChange(listener) {
