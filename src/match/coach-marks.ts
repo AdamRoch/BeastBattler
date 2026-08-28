@@ -1,10 +1,16 @@
-import { getPlayer, type MatchState, type PlayerId } from "../rules/core";
+import {
+  getPlayer,
+  hasSummoningSickness,
+  type MatchState,
+  type PlayerId,
+} from "../rules/core";
 
 export type CoachMarkKind =
   | "land-monster-pairing"
   | "sorcery-timing"
   | "play-a-beast"
-  | "play-a-land";
+  | "play-a-land"
+  | "combat-basics";
 
 export interface CoachMark {
   readonly kind: CoachMarkKind;
@@ -68,6 +74,9 @@ export function createCoachMarkTracker(): CoachMarkTracker {
           : null) ??
         (!shown.has("play-a-land") && playLandPending
           ? findPlayLandTip(state, localPlayerId)
+          : null) ??
+        (!shown.has("combat-basics")
+          ? findCombatBasicsTip(state, localPlayerId)
           : null);
 
       if (!next) {
@@ -278,7 +287,7 @@ function findPlayLandTip(
 
   return {
     kind: "play-a-land",
-    message: "Recommend you play a land.",
+    message: "Play one land each turn when you can.",
     cardIds: [land.instanceId],
   };
 }
@@ -289,6 +298,35 @@ function canActInMainPhase(state: MatchState, playerId: PlayerId): boolean {
     !state.result &&
     !state.responsePlayer &&
     state.stack.length === 0;
+}
+
+function findCombatBasicsTip(
+  state: MatchState,
+  playerId: PlayerId,
+): CoachMark | null {
+  if (
+    state.activePlayer !== playerId ||
+    state.phase !== "combat" ||
+    state.result ||
+    state.responsePlayer ||
+    state.stack.length > 0
+  ) {
+    return null;
+  }
+
+  const hasReadyAttacker = getPlayer(state, playerId).monsters.some(
+    (monster) => !hasSummoningSickness(state, monster),
+  );
+  if (!hasReadyAttacker) {
+    return null;
+  }
+
+  return {
+    kind: "combat-basics",
+    message:
+      "Choose your attackers. Extra ATK beyond a blocker's remaining HP hits the opponent.",
+    cardIds: [],
+  };
 }
 
 function appendCoachMarkPointers(

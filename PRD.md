@@ -231,6 +231,70 @@ Hotseat specifics:
 - Hands are hidden behind a **pass-the-device curtain** ("Player N — press when ready") at each turn change.
 - Counterspell response windows also use the curtain: "Opponent may respond — pass the device." The counterspell stays secret until played.
 
+### 11.1 New-player experience
+
+The game must teach a player who has never used a desktop trading-card game.
+Familiarity with Magic: The Gathering, Yu-Gi-Oh, or their terminology is not
+an entry requirement. Rules still use precise names internally, but player
+copy must define a term the first time it matters. The UI must not leave words
+such as mulligan, summoning sickness, trample, sorcery, instant, stack,
+priority, Reach, or extra deck unexplained.
+
+Guidance follows progressive disclosure: explain a rule when the player can
+act on it, keep the message short, and leave the control usable. Do not open a
+full-screen rules lecture before the match.
+
+Required match guidance:
+
+- **Phase progression stays visible.** Whenever the local player can act, the
+  action area states what the current phase allows and names the control that
+  advances or ends it. This is persistent guidance, not a toast that vanishes
+  before the player finds the button.
+- **Lands are counted and explained.** Each board shows total lands and ready
+  lands in plain text as well as elemental pips. During main phase, the player
+  is reminded that they may play one land each turn and should usually do so
+  before moving to combat. Ready and spent lands must be visually distinct.
+- **The opening hand explains the free mulligan.** The prompt states that all
+  four cards may be replaced once, with no penalty.
+- **Contextual decision prompts explain consequences.** Fusion says that both
+  parents are consumed, the result comes from their elements, and the result
+  may attack immediately unless it has Slow. Blocking explains one blocker per
+  attacker, Flying/Reach restrictions, and universal trample. Counterspell
+  explains that the pending action has not resolved and that the response
+  resolves first.
+- **Local spell targeting cannot hang forever.** Target selection cancels
+  after 15 seconds without a choice and says that targeting expired. Online
+  play may close it sooner when the server decision timer in §14.7 expires.
+- **Opponent actions are readable.** VS-AI actions are narrated and presented
+  in order with enough separation to understand a land play, summon, spell,
+  fusion, phase change, attack, and result. Rules calculation remains
+  deterministic and independent of presentation timers.
+- **Combat shows relationships and amounts.** Before damage, the UI makes each
+  attacker-to-blocker assignment unmistakable. Resolution reports the named
+  beast and exact damage it took, plus any trample damage dealt to the player.
+
+Required tooltips and previews:
+
+- Pointer hover and keyboard focus reveal the same rules. Tooltips never block
+  clicks and close on pointer exit, focus exit, state change, or dismissal.
+- Monster cards in hand, monsters on the board, and fusion cards in the extra
+  deck show name, ATK, current/max HP where applicable, element, level, current
+  status, and plain-language keyword rules.
+- Spell cards show timing, cost, valid target type, and their full plain-
+  language effect.
+- The extra deck explains that fusion cards do not live in the draw deck, that
+  base-beast elements select the result, and that each listed fusion can leave
+  the extra deck only once per match.
+- Every deck choice offers a preview derived from its actual card data: deck
+  size, base beasts and stats, Flying/Reach access, included spells and effects,
+  and the three possible fusion results with Burst/Slow notes.
+- Target options preview their actual game target before selection. Friendly
+  targets use a neutral warning style, never the enemy danger-red treatment.
+
+Tutorial state resets for a rematch. Guidance must use the local player's
+perspective in VS-AI, hotseat, and online modes and must never reveal a hidden
+opponent card.
+
 ## 12. Definition of Done (V1)
 
 One complete playable match, end to end:
@@ -243,6 +307,8 @@ One complete playable match, end to end:
 - Hologram monsters, summon/attack/hit/death/spell animations per §9.
 - Card art from the in-engine render pipeline.
 - Title/mode/deck-select/results screens.
+- New-player guidance and rules previews per §11.1, verified without assuming
+  prior trading-card-game knowledge.
 
 **Explicitly out of scope for V1:** deckbuilding, online play (V1.1), settings menus, audio (or minimal placeholder), per-creature bespoke animation, mobile layout, Heal/Surge spells (cut), account/persistence systems.
 

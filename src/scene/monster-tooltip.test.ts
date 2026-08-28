@@ -6,7 +6,10 @@ import type {
   FusionMonsterCard,
   MonsterPermanent,
 } from "../rules/core";
-import { monsterTooltipContent } from "./monster-tooltip";
+import {
+  monsterCardTooltipContent,
+  monsterTooltipContent,
+} from "./monster-tooltip";
 
 describe("monster tooltip content", () => {
   it("shows live stats, base level, element, and ready status for a base monster", () => {
@@ -74,9 +77,61 @@ describe("monster tooltip content", () => {
       "Flying: Can be blocked only by Flying or Reach creatures.",
     );
   });
+
+  it("describes a Flying monster while it is still in hand", () => {
+    const card: BaseMonsterCard = {
+      ...baseMonster("volt-bat"),
+      instanceId: "volt-bat-in-hand",
+    };
+
+    expect(monsterCardTooltipContent(card, "IN HAND")).toEqual({
+      name: "Volt Bat",
+      attack: 1,
+      currentHealth: 2,
+      maximumHealth: 2,
+      elementLabel: "Lightning",
+      levelLabel: "LEVEL 1 · BASE",
+      statusLabel: "IN HAND",
+      rules: [
+        "Flying: Can be blocked only by Flying or Reach creatures.",
+        "Trample: excess combat damage hits the defending player.",
+      ],
+    });
+  });
+
+  it("describes an unplayed fusion in the extra deck", () => {
+    const card: FusionMonsterCard = {
+      ...fusionMonster("tsunami-beast"),
+      instanceId: "tsunami-extra-deck",
+    };
+
+    expect(monsterCardTooltipContent(card, "EXTRA DECK")).toMatchObject({
+      name: "Tsunami Beast",
+      levelLabel: "LEVEL 2 · FUSION",
+      statusLabel: "EXTRA DECK",
+      rules: [
+        "Slow: Cannot attack the turn it enters play.",
+        "Trample: excess combat damage hits the defending player.",
+        "Match two base-beast elements to summon this fusion from the extra deck.",
+      ],
+    });
+  });
+
+  it("explains why a used fusion cannot be summoned again", () => {
+    const card: FusionMonsterCard = {
+      ...fusionMonster("inferno-beast"),
+      instanceId: "inferno-already-used",
+    };
+
+    expect(monsterCardTooltipContent(card, "SUMMONED").rules).toContain(
+      "Already used: this fusion cannot be summoned from the extra deck again this match.",
+    );
+  });
 });
 
-function baseMonster(id: "ember-imp"): (typeof BASE_MONSTERS)[number] {
+function baseMonster(
+  id: "ember-imp" | "volt-bat",
+): (typeof BASE_MONSTERS)[number] {
   const card = BASE_MONSTERS.find((candidate) => candidate.id === id);
   if (!card) {
     throw new Error(`Missing ${id}`);

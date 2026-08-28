@@ -1,4 +1,9 @@
-import type { Element, MonsterPermanent } from "../rules/core";
+import type {
+  BaseMonsterCard,
+  Element,
+  FusionMonsterCard,
+  MonsterPermanent,
+} from "../rules/core";
 
 const ELEMENT_NAMES: Readonly<Record<Element, string>> = {
   fire: "Fire",
@@ -25,9 +30,16 @@ export interface MonsterTooltipContent {
   readonly maximumHealth: number;
   readonly elementLabel: string;
   readonly levelLabel: string;
-  readonly statusLabel: "READY" | "SUMMONING SICK";
+  readonly statusLabel: MonsterTooltipStatus;
   readonly rules: readonly string[];
 }
+
+export type MonsterTooltipStatus =
+  | "READY"
+  | "SUMMONING SICK"
+  | "IN HAND"
+  | "EXTRA DECK"
+  | "SUMMONED";
 
 export interface MonsterTooltip {
   show(content: MonsterTooltipContent, clientX: number, clientY: number): void;
@@ -39,7 +51,44 @@ export function monsterTooltipContent(
   monster: MonsterPermanent,
   summoningSick: boolean,
 ): MonsterTooltipContent {
-  const { card } = monster;
+  return tooltipContent(
+    monster.card,
+    Math.max(0, monster.card.health - monster.damage),
+    summoningSick ? "SUMMONING SICK" : "READY",
+  );
+}
+
+export function monsterCardTooltipContent(
+  card: BaseMonsterCard | FusionMonsterCard,
+  statusLabel: Extract<MonsterTooltipStatus, "IN HAND" | "EXTRA DECK" | "SUMMONED">,
+): MonsterTooltipContent {
+  const content = tooltipContent(card, card.health, statusLabel);
+  if (statusLabel === "EXTRA DECK") {
+    return {
+      ...content,
+      rules: [
+        ...content.rules,
+        "Match two base-beast elements to summon this fusion from the extra deck.",
+      ],
+    };
+  }
+  if (statusLabel === "SUMMONED") {
+    return {
+      ...content,
+      rules: [
+        ...content.rules,
+        "Already used: this fusion cannot be summoned from the extra deck again this match.",
+      ],
+    };
+  }
+  return content;
+}
+
+function tooltipContent(
+  card: BaseMonsterCard | FusionMonsterCard,
+  currentHealth: number,
+  statusLabel: MonsterTooltipStatus,
+): MonsterTooltipContent {
   const elements = card.category === "base-monster"
     ? [card.element]
     : card.elements;
@@ -50,11 +99,11 @@ export function monsterTooltipContent(
   return {
     name: card.name,
     attack: card.attack,
-    currentHealth: Math.max(0, card.health - monster.damage),
+    currentHealth,
     maximumHealth: card.health,
     elementLabel: elements.map((element) => ELEMENT_NAMES[element]).join(" / "),
     levelLabel: levelLabel(card.level),
-    statusLabel: summoningSick ? "SUMMONING SICK" : "READY",
+    statusLabel,
     rules: keywordNote
       ? [keywordNote, UNIVERSAL_TRAMPLE_NOTE]
       : [UNIVERSAL_TRAMPLE_NOTE],
@@ -118,6 +167,10 @@ function renderTooltipContent(
   content: MonsterTooltipContent,
 ): void {
   tooltip.classList.toggle("is-summoning-sick", content.statusLabel === "SUMMONING SICK");
+  tooltip.classList.toggle(
+    "is-card-location",
+    content.statusLabel === "IN HAND" || content.statusLabel === "EXTRA DECK",
+  );
   tooltip.replaceChildren(
     textElement("p", "monster-tooltip-level", content.levelLabel),
     textElement("h2", "monster-tooltip-name", content.name),

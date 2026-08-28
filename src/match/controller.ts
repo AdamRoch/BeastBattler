@@ -76,6 +76,7 @@ import {
 import { createSummonTipTracker } from "./summon-tip";
 import {
   createMonsterTooltip,
+  monsterCardTooltipContent,
   monsterTooltipContent,
 } from "../scene/monster-tooltip";
 import {
@@ -377,7 +378,7 @@ export function mountMatch(
           selectedAttackers,
           fusionPending: hasPendingFusion(AI),
         })}
-        <div class="land-readout">${landPips(playerTwo.lands)} <span data-draw-hand="${AI}">${playerTwo.hand.length} cards</span></div>
+        <div class="land-readout">${landPips(playerTwo.lands)} ${landSummary(playerTwo.lands)} <span data-draw-hand="${AI}">${playerTwo.hand.length} cards</span></div>
       </section>
 
       <section class="board-readout board-player" aria-label="Player 1 board">
@@ -385,7 +386,7 @@ export function mountMatch(
           selectedAttackers,
           fusionPending: hasPendingFusion(HUMAN),
         })}
-        <div class="land-readout">${landPips(playerOne.lands)} <span>${playerOne.deck.length} deck</span></div>
+        <div class="land-readout">${landPips(playerOne.lands)} ${landSummary(playerOne.lands)} <span>${playerOne.deck.length} deck</span></div>
       </section>
 
       ${drawDeckAnchor(AI, playerTwo.deck.length)}
@@ -398,7 +399,10 @@ export function mountMatch(
       `}
 
       <section class="action-dock">
-        <p class="notice${shouldSkipEmptyCombat() ? " is-empty-combat" : ""}" role="status">${handIsPrivate ? "Pass the device to continue." : notice}</p>
+        <div class="action-copy">
+          <p class="notice${shouldSkipEmptyCombat() ? " is-empty-combat" : ""}" role="status">${handIsPrivate ? "Pass the device to continue." : notice}</p>
+          ${handIsPrivate ? "" : phaseGuidance(local)}
+        </div>
         ${handIsPrivate ? "" : phaseActions(local)}
       </section>
 
@@ -489,14 +493,18 @@ export function mountMatch(
     const spellTooltipId = card.kind === "spell"
       ? ` data-spell-tooltip-id="${card.id}"`
       : "";
+    const monsterTooltipId = card.kind === "monster"
+      ? ` data-monster-tooltip-card-id="${card.instanceId}"`
+      : "";
     return `
       <button
         class="hand-card${playable}${highlighted}"
         data-action="play-card"
         data-card-id="${card.instanceId}"
         ${spellTooltipId}
+        ${monsterTooltipId}
         style="--fan-index:${offset}; --fan-total:${count}"
-        aria-label="Play ${card.name}"
+        aria-label="${handCardAriaLabel(card)}"
       >
         <img src="${cardArt(card)}" alt="${card.name} card art" />
         <span class="card-name">${card.name}</span>
@@ -695,12 +703,48 @@ export function mountMatch(
     }
   }
 
+  function phaseGuidance(player: MatchState["players"][number]): string {
+    if (
+      state.result ||
+      state.phase === "mulligan" ||
+      state.responsePlayer ||
+      state.activePlayer !== player.id
+    ) {
+      return "";
+    }
+
+    let message: string;
+    switch (state.phase) {
+      case "main": {
+        const landInHand = player.hand.some((card) => card.kind === "land");
+        if (player.landPlayedThisTurn) {
+          message = "Your land play is used. Finish your actions, then choose To Combat.";
+        } else if (landInHand) {
+          message = "You may play one land each turn. Play one now, then choose To Combat when ready.";
+        } else {
+          message = "You may play one land each turn. Finish your actions, then choose To Combat.";
+        }
+        break;
+      }
+      case "combat":
+        message = hasReadyAttackers(state, player.id)
+          ? "Select attackers, then choose Attack. Hold skips combat."
+          : "No beast can attack, so combat will skip.";
+        break;
+      case "end":
+        message = "Choose End Turn to pass play to your opponent.";
+        break;
+    }
+    return `<p class="phase-guidance" data-testid="phase-guidance">${message}</p>`;
+  }
+
   function mulliganPrompt(hand: readonly GameCard[]): string {
     return `
       <div class="decision-backdrop">
         <section class="decision-panel mulligan-panel" data-testid="mulligan-prompt">
           <span class="eyebrow">OPENING HAND</span>
           <h1>Keep these four?</h1>
+          <p class="tutorial-copy">You may replace all four cards once and draw four new cards. There is no penalty.</p>
           <div class="mulligan-cards">
             ${hand.map((card) => `<img src="${cardArt(card)}" alt="${card.name}" />`).join("")}
           </div>
@@ -719,6 +763,7 @@ export function mountMatch(
       <section class="floating-prompt fusion-prompt" data-testid="fusion-prompt">
         <span class="eyebrow">FUSION AVAILABLE</span>
         <h2>Fuse?</h2>
+        <p class="tutorial-copy">The result comes from the two beasts' elements. Both beasts are consumed. The fusion can attack this turn unless it has Slow.</p>
         <div class="prompt-options">
           ${options
             .map((option) => {
@@ -848,7 +893,7 @@ export function mountMatch(
         <div>
           <span class="eyebrow">RESPONSE WINDOW</span>
           <h2>${responseWindowMessage(top, mode)}</h2>
-          <p>The action is pending. Counter it or let it resolve.</p>
+          <p>The action has not resolved. Counterspell spends 1 ready land and resolves before it. Otherwise, let the action resolve.</p>
           ${response ? "" : '<p class="response-note">(You don\'t have any instant-speed cards to respond with.)</p>'}
         </div>
         <div class="decision-actions">
@@ -871,6 +916,7 @@ export function mountMatch(
         <section class="decision-panel blocker-panel" data-testid="blocker-prompt">
           <span class="eyebrow">INCOMING ATTACK</span>
           <h1>Assign blockers</h1>
+          <p class="tutorial-copy">Each beast can block one attacker. Flying attackers require Flying or Reach. Extra ATK beyond a blocker's remaining HP hits you.</p>
           <div class="blocker-rows">
             ${attackers.map((attacker) => `
               <label>
@@ -1540,21 +1586,64 @@ export function mountMatch(
     monsterTooltip.hide();
   }
 
-  function handleSpellTooltipPointerMove(event: PointerEvent): void {
+  function handleHudTooltipPointerMove(event: PointerEvent): void {
     const target = event.target;
     if (!(target instanceof Element)) {
+      hideMonsterTooltip();
       hideSpellTooltip();
       return;
     }
 
-    const trigger = target.closest<HTMLElement>("[data-spell-tooltip-id]");
-    const content = spellTooltipContent(trigger?.dataset.spellTooltipId ?? "");
-    if (!content) {
+    const monsterTrigger = target.closest<HTMLElement>(
+      "[data-monster-tooltip-card-id]",
+    );
+    const monsterContent = monsterCardTooltipFor(
+      monsterTrigger?.dataset.monsterTooltipCardId ?? "",
+    );
+    if (monsterContent) {
       hideSpellTooltip();
+      monsterTooltip.show(monsterContent, event.clientX, event.clientY);
       return;
     }
 
-    spellTooltip.show(content, event.clientX, event.clientY);
+    hideMonsterTooltip();
+    const spellTrigger = target.closest<HTMLElement>("[data-spell-tooltip-id]");
+    const spellContent = spellTooltipContent(
+      spellTrigger?.dataset.spellTooltipId ?? "",
+    );
+    if (spellContent) {
+      spellTooltip.show(spellContent, event.clientX, event.clientY);
+      return;
+    }
+    hideSpellTooltip();
+  }
+
+  function monsterCardTooltipFor(cardId: string) {
+    if (!cardId) {
+      return null;
+    }
+    const playerId = localPlayerId();
+    const player = getPlayer(state, playerId);
+    const handCard = player.hand.find(
+      (card) => card.kind === "monster" && card.instanceId === cardId,
+    );
+    if (handCard?.kind === "monster") {
+      return monsterCardTooltipContent(handCard, "IN HAND");
+    }
+
+    const extraCard = initialExtraDecks[playerId].find(
+      (card) => card.instanceId === cardId,
+    );
+    if (!extraCard) {
+      return null;
+    }
+    const available = player.extraDeck.some(
+      (card) => card.instanceId === cardId,
+    );
+    return monsterCardTooltipContent(
+      extraCard,
+      available ? "EXTRA DECK" : "SUMMONED",
+    );
   }
 
   function hideSpellTooltip(): void {
@@ -2130,8 +2219,12 @@ export function mountMatch(
 
   unsubscribeOnline = online?.subscribe(applyOnlineUpdate) ?? (() => {});
   hud.addEventListener("click", handleClick);
-  hud.addEventListener("pointermove", handleSpellTooltipPointerMove);
-  hud.addEventListener("pointerleave", hideSpellTooltip);
+  hud.addEventListener("pointermove", handleHudTooltipPointerMove);
+  const hideHudTooltips = () => {
+    hideMonsterTooltip();
+    hideSpellTooltip();
+  };
+  hud.addEventListener("pointerleave", hideHudTooltips);
   arenaCanvas?.addEventListener("pointermove", handleMonsterPointerMove);
   arenaCanvas?.addEventListener("pointerleave", hideMonsterTooltip);
   const repositionCoachMarkPointers = () =>
@@ -2171,8 +2264,8 @@ export function mountMatch(
       unsubscribeOnline();
       options.sfx?.setAmbientMonsterCount(0);
       hud.removeEventListener("click", handleClick);
-      hud.removeEventListener("pointermove", handleSpellTooltipPointerMove);
-      hud.removeEventListener("pointerleave", hideSpellTooltip);
+      hud.removeEventListener("pointermove", handleHudTooltipPointerMove);
+      hud.removeEventListener("pointerleave", hideHudTooltips);
       arenaCanvas?.removeEventListener("pointermove", handleMonsterPointerMove);
       arenaCanvas?.removeEventListener("pointerleave", hideMonsterTooltip);
       hideMonsterTooltip();
@@ -2203,7 +2296,11 @@ export function mountMatch(
       (candidate) => candidate.instanceId === card.instanceId,
     );
     return `
-      <article class="extra-card${available ? "" : " is-spent"}">
+      <article
+        class="extra-card${available ? "" : " is-spent"}"
+        data-monster-tooltip-card-id="${card.instanceId}"
+        aria-label="${monsterCardAriaLabel(card, available ? "Extra deck" : "Summoned")}"
+      >
         <img src="${cardArt(card)}" alt="${card.name}" />
         <span>${card.name}</span>
         <small>${card.attack}/${card.health} ${available ? "READY" : "SUMMONED"}</small>
@@ -2251,6 +2348,21 @@ function cardStats(card: GameCard): string {
   return `<small class="card-meta">${card.timing.toUpperCase()} · COST 1</small>`;
 }
 
+function handCardAriaLabel(card: GameCard): string {
+  if (card.kind !== "monster") {
+    return `Play ${card.name}`;
+  }
+  return `Play ${card.name}. ${monsterCardAriaLabel(card, "In hand")}`;
+}
+
+function monsterCardAriaLabel(
+  card: BaseMonsterCard | FusionMonsterCard,
+  location: string,
+): string {
+  const keyword = card.keyword ? ` ${card.keyword}.` : "";
+  return `${location}. ${card.attack} attack, ${card.health} health.${keyword}`;
+}
+
 export function cardKeywordMarkup(card: GameCard): string {
   if (card.kind !== "monster" || !card.keyword) return "";
   return `<small class="card-keyword">${card.keyword.toUpperCase()}</small>`;
@@ -2265,11 +2377,17 @@ function phaseLabel(state: MatchState): string {
 
 function landPips(lands: MatchState["players"][number]["lands"]): string {
   if (lands.length === 0) {
-    return '<span class="no-lands">NO LANDS</span>';
+    return "";
   }
   return lands
     .map((land) => `<i class="land-pip element-${land.card.element}${land.ready ? " is-ready" : ""}" title="${land.card.name} ${land.ready ? "ready" : "spent"}"></i>`)
     .join("");
+}
+
+function landSummary(lands: MatchState["players"][number]["lands"]): string {
+  const ready = lands.filter((land) => land.ready).length;
+  const landLabel = lands.length === 1 ? "LAND" : "LANDS";
+  return `<strong class="land-count">${lands.length} ${landLabel} · ${ready} READY</strong>`;
 }
 
 function landArt(element: Element, name: string): string {
