@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  assembleDeck,
+  deriveExtraDeck,
+  type BaseMonsterCard,
+  type FusionMonsterCard,
+} from "../cards/catalog";
 import type { CombatPlan } from "../rules/combat";
-import type { MatchResult, PlayerId } from "../rules/core";
+import {
+  createMatch,
+  type MatchResult,
+  type MatchState,
+  type MonsterPermanent,
+  type PlayerId,
+} from "../rules/core";
+import { fuseMonsters, upgradeFusion } from "../rules/fusion";
 import {
   combatAnnouncement,
   createAnnouncementDeduper,
+  fallenBeastIds,
   fusionCompletionAnnouncement,
   resultAnnouncement,
 } from "./announcer-events";
@@ -54,4 +68,124 @@ describe("announcer event selection", () => {
     expect(deduper.once("combat:3", "direct-attack")).toBeNull();
     expect(deduper.once("combat:4", "direct-attack")).toBe("direct-attack");
   });
+
+  it("does not count normal fusion materials as fallen beasts", () => {
+    const { state, ember, tide } = fusionFixture();
+
+    const fused = fuseMonsters(
+      state,
+      "player-1",
+      [ember.instanceId, tide.instanceId],
+    );
+
+    expect(fallenBeastIds(state, fused)).toEqual([]);
+  });
+
+  it("does not count a level-three fusion material as a fallen beast", () => {
+    const { state, ember, steam } = fusionFixture();
+    const upgradeState = withPlayerOneMonsters(state, [
+      permanent(steam),
+      permanent(ember),
+    ]);
+
+    const upgraded = upgradeFusion(
+      upgradeState,
+      "player-1",
+      steam.instanceId,
+      ember.instanceId,
+    );
+
+    expect(fallenBeastIds(upgradeState, upgraded)).toEqual([]);
+  });
+
+  it("still counts a destroyed beast as fallen", () => {
+    const { state, ember } = fusionFixture();
+    const before = withPlayerOneMonsters(state, [permanent(ember)]);
+    const after: MatchState = {
+      ...before,
+      players: [
+        {
+          ...before.players[0],
+          monsters: [],
+          discardPile: [...before.players[0].discardPile, ember],
+        },
+        before.players[1],
+      ],
+    };
+
+    expect(fallenBeastIds(before, after)).toEqual([ember.instanceId]);
+  });
 });
+
+function fusionFixture(): {
+  readonly state: MatchState;
+  readonly ember: BaseMonsterCard;
+  readonly tide: BaseMonsterCard;
+  readonly steam: FusionMonsterCard;
+} {
+  const deck = assembleDeck("fire-water");
+  const extraDeck = deriveExtraDeck("fire-water");
+  const ember = deck.find(
+    (card): card is BaseMonsterCard =>
+      card.kind === "monster" &&
+      card.category === "base-monster" &&
+      card.id === "ember-imp",
+  );
+  const tide = deck.find(
+    (card): card is BaseMonsterCard =>
+      card.kind === "monster" &&
+      card.category === "base-monster" &&
+      card.id === "tide-serpent",
+  );
+  const steam = extraDeck.find((card) => card.name === "Steam Beast");
+  if (!ember || !tide || !steam) {
+    throw new Error("Missing fusion announcer fixtures");
+  }
+
+  const created = createMatch({
+    playerOneDeck: deck,
+    playerTwoDeck: deck,
+    playerOneExtraDeck: extraDeck,
+    playerTwoExtraDeck: extraDeck,
+  });
+  const state = withPlayerOneMonsters(
+    {
+      ...created,
+      phase: "main",
+      turnNumber: 2,
+    },
+    [permanent(ember), permanent(tide)],
+  );
+  return { state, ember, tide, steam };
+}
+
+function withPlayerOneMonsters(
+  state: MatchState,
+  monsters: readonly MonsterPermanent[],
+): MatchState {
+  return {
+    ...state,
+    players: [
+      {
+        ...state.players[0],
+        monsters,
+        mulliganDecision: "kept",
+      },
+      {
+        ...state.players[1],
+        mulliganDecision: "kept",
+      },
+    ],
+  };
+}
+
+function permanent(
+  card: BaseMonsterCard | FusionMonsterCard,
+): MonsterPermanent {
+  return {
+    card,
+    damage: 0,
+    summonedOnTurn: 1,
+    summoningSick: false,
+  };
+}
