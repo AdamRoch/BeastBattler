@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   continueHotseatDeckSelection,
+  continueHotseatResultHandoff,
   createInitialAppState,
+  handoffHotseatResult,
   rematch,
   returnToTitle,
   selectArchetype,
@@ -78,5 +80,33 @@ describe("screen flow state", () => {
       result: null,
     });
     expect(returnToTitle()).toEqual(createInitialAppState());
+  });
+
+  it.each([
+    ["player-1", "player-2", "deck-out"],
+    ["player-2", "player-1", "life"],
+  ] as const)("hands a hotseat result from winner %s to loser %s", (winner, loser, reason) => {
+    let state = selectMode(showModeSelect(createInitialAppState()), "hotseat");
+    state = selectArchetype(state, "fire-lightning");
+    state = continueHotseatDeckSelection(state);
+    state = selectArchetype(state, "water-earth");
+    state = showResult(state, { winner, loser, reason });
+
+    expect(state).toMatchObject({
+      screen: "result-handoff",
+      resultViewingPlayer: winner,
+    });
+
+    state = continueHotseatResultHandoff(state);
+    expect(state).toMatchObject({
+      screen: "result",
+      resultViewingPlayer: winner,
+    });
+
+    state = handoffHotseatResult(state);
+    expect(state).toMatchObject({
+      screen: "result-handoff",
+      resultViewingPlayer: loser,
+    });
   });
 });

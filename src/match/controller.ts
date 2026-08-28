@@ -167,6 +167,7 @@ export interface OnlineMatchUpdate {
  */
 export interface OnlineMatchAdapter {
   getState(): MatchState | null;
+  localPlayerId(): PlayerId | null;
   subscribe(listener: (update: OnlineMatchUpdate) => void): () => void;
   sendIntent(intent: MatchIntent): void;
   requestRematch(): void;
@@ -268,7 +269,10 @@ export function mountMatch(
   }
 
   function localPlayerId(): PlayerId {
-    return mode === "hotseat" ? viewingPlayer : HUMAN;
+    if (mode === "hotseat") {
+      return viewingPlayer;
+    }
+    return mode === "online" ? online?.localPlayerId() ?? HUMAN : HUMAN;
   }
 
   function showPrivacyCurtain(
@@ -844,13 +848,13 @@ export function mountMatch(
   }
 
   function resultPrompt(current: MatchState): string {
-    const winner = current.result?.winner;
-    if (!winner) {
+    const result = current.result;
+    if (!result) {
       return "";
     }
-    const message = resultMessageFor(winner, localPlayerId());
+    const message = resultMessageFor(result, localPlayerId());
     const heading = mode === "hotseat"
-      ? `Player ${winner === HUMAN ? 1 : 2} wins`
+      ? `Player ${result.winner === HUMAN ? 1 : 2} wins`
       : message.outcome === "win" ? "Victory" : "Defeat";
     return `
       <div class="decision-backdrop">
@@ -858,7 +862,7 @@ export function mountMatch(
           <span class="eyebrow">MATCH COMPLETE</span>
           <h1>${heading}</h1>
           ${resultMessageMarkup(message)}
-          <p>${current.result?.reason === "deck-out" ? "A battler ran out of cards." : "A life counter reached zero."}</p>
+          <p>${message.reason}</p>
           <button class="primary-action" data-action="rematch">REMATCH</button>
           ${mode === "online" ? '<button class="quiet-action" data-action="leave-match">LEAVE MATCH</button>' : ""}
         </section>
