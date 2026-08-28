@@ -13,6 +13,7 @@ import {
 } from "./core";
 import {
   assignBlockers,
+  calculateCombatDamage,
   canBlock,
   countLegalBlockers,
   declareAttackers,
@@ -139,6 +140,20 @@ describe("blocker assignments", () => {
     ]).blocks).toHaveLength(1);
   });
 
+  it.each([
+    ["Cinder Wall", "cinder-wall"],
+    ["Moss Tortoise", "moss-tortoise"],
+  ] as const)("allows %s to block a non-Flying attacker", (_name, blockerId) => {
+    const attacker = permanent("stone-bull", "ground-attacker");
+    const reachBlocker = permanent(blockerId, "reach-blocker");
+    const state = combatState([attacker], [reachBlocker]);
+    const declaration = declareAttackers(state, "player-1", [attacker.card.instanceId]);
+
+    expect(assignBlockers(state, "player-2", declaration, [
+      block(attacker, reachBlocker),
+    ]).blocks).toEqual([block(attacker, reachBlocker)]);
+  });
+
   it("counts only legal blockers for mixed Flying and ground attacks", () => {
     const flyingAttacker = permanent("volt-bat", "flying-attacker");
     const groundAttacker = permanent("ember-imp", "ground-attacker");
@@ -207,6 +222,17 @@ describe("combat damage", () => {
     const plan = assignBlockers(state, "player-2", declaration, [
       block(attacker, blocker),
     ]);
+
+    expect(calculateCombatDamage(state, plan)).toEqual({
+      exchanges: [{
+        attackerId: "attacker",
+        blockerId: "blocker",
+        damageToAttacker: 2,
+        damageToBlocker: 4,
+        damageToDefendingPlayer: 2,
+      }],
+      totalDamageToDefendingPlayer: 2,
+    });
 
     const resolved = resolveCombat(state, plan);
 

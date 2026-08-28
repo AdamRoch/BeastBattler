@@ -148,6 +148,8 @@ export function effectForAnimation(
       return event.variant === "star3" ? "fusion-star3" : "fusion";
     case "attack":
       return "attack";
+    case "combat-link":
+      return "attack";
     case "hit":
       return "hit";
     case "death":

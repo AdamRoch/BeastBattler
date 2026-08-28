@@ -119,6 +119,12 @@ import {
   buildAiPresentation,
   type AiPresentationBeat,
 } from "./ai-presentation";
+import {
+  CombatPresentationQueue,
+  buildCombatPresentation,
+  combatPresentationMarkup,
+  type CombatPresentationBeat,
+} from "./combat-presentation";
 
 const HUMAN: PlayerId = "player-1";
 const AI: PlayerId = "player-2";
@@ -249,6 +255,8 @@ export function mountMatch(
   let notice = "Choose Keep or Mulligan to begin.";
   let aiTimer: number | undefined;
   let aiPresentationActive = false;
+  let combatPresentationActive = false;
+  let combatPresentationBeat: CombatPresentationBeat | null = null;
   let emptyCombatTimer: number | undefined;
   let disposed = false;
   let completionReported = false;
@@ -275,6 +283,7 @@ export function mountMatch(
   const pendingFusionReveals = new Map<string, FusionRevealData>();
   const announcementDeduper = createAnnouncementDeduper();
   const aiPresentation = new AiPresentationQueue(window);
+  const combatPresentation = new CombatPresentationQueue(window);
   const summonTip = createSummonTipTracker();
   const coachMarks = createCoachMarkTracker();
   let unsubscribeOnline = () => {};
@@ -354,6 +363,7 @@ export function mountMatch(
       .join("|");
     const showFusionPrompt =
       fusionOptions.length > 0 && fusionKey !== dismissedFusionKey;
+    const interactionLocked = aiPresentationActive || combatPresentationActive;
 
     hud.innerHTML = `
       <header class="match-topbar">
@@ -414,16 +424,17 @@ export function mountMatch(
           <p class="notice${shouldSkipEmptyCombat() ? " is-empty-combat" : ""}" role="status">${handIsPrivate ? "Pass the device to continue." : notice}</p>
           ${handIsPrivate ? "" : phaseGuidance(local)}
         </div>
-        ${handIsPrivate ? "" : aiPresentationActive ? '<button class="primary-action" disabled>AI ACTING</button>' : phaseActions(local)}
+        ${handIsPrivate ? "" : interactionLocked ? `<button class="primary-action" disabled>${combatPresentationActive ? "COMBAT" : "AI ACTING"}</button>` : phaseActions(local)}
       </section>
 
       ${!handIsPrivate && state.phase === "mulligan" && local.mulliganDecision === "pending" ? mulliganPrompt(local.hand) : ""}
-      ${!handIsPrivate && !aiPresentationActive && showFusionPrompt ? fusionPrompt(fusionOptions) : ""}
-      ${!handIsPrivate && !aiPresentationActive && upgradeOptions.length > 0 ? upgradePrompt(upgradeOptions) : ""}
-      ${!handIsPrivate && !aiPresentationActive && pendingTarget ? targetingPrompt(pendingTarget) : ""}
-      ${!handIsPrivate && !aiPresentationActive && state.responsePlayer === localId ? responsePrompt(state) : ""}
-      ${!handIsPrivate && !aiPresentationActive && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
-      ${!handIsPrivate && !aiPresentationActive && state.result && !options.onComplete ? resultPrompt(state) : ""}
+      ${!handIsPrivate && !interactionLocked && showFusionPrompt ? fusionPrompt(fusionOptions) : ""}
+      ${!handIsPrivate && !interactionLocked && upgradeOptions.length > 0 ? upgradePrompt(upgradeOptions) : ""}
+      ${!handIsPrivate && !interactionLocked && pendingTarget ? targetingPrompt(pendingTarget) : ""}
+      ${!handIsPrivate && !interactionLocked && state.responsePlayer === localId ? responsePrompt(state) : ""}
+      ${!handIsPrivate && !interactionLocked && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
+      ${!handIsPrivate && !interactionLocked && state.result && !options.onComplete ? resultPrompt(state) : ""}
+      ${combatPresentationBeat ? combatPresentationMarkup(combatPresentationBeat) : ""}
       ${summonTipVisible ? '<aside class="summon-tip" data-testid="summon-tip" role="status">Lv1 creatures can\'t attack on their first turn.</aside>' : ""}
       ${coachMark ? coachMarkMarkup(coachMark) : ""}
       ${privacyCurtainMarkup(privacyCurtain)}
@@ -432,7 +443,7 @@ export function mountMatch(
 
     startNextDrawAnimation();
 
-    if (state.result && options.onComplete && !completionReported && !aiPresentationActive) {
+    if (state.result && options.onComplete && !completionReported && !interactionLocked) {
       completionReported = true;
       options.onComplete(state.result);
     }
@@ -921,33 +932,7 @@ export function mountMatch(
     declaration: AttackDeclaration,
     blockers: readonly MonsterPermanent[],
   ): string {
-    const attackers = getPlayer(state, declaration.attackingPlayer).monsters.filter((monster) =>
-      declaration.attackerIds.includes(monster.card.instanceId),
-    );
-    return `
-      <div class="decision-backdrop">
-        <section class="decision-panel blocker-panel" data-testid="blocker-prompt">
-          <span class="eyebrow">INCOMING ATTACK</span>
-          <h1>Assign blockers</h1>
-          <p class="tutorial-copy">Each beast can block one attacker. Flying attackers require Flying or Reach. Extra ATK beyond a blocker's remaining HP hits you.</p>
-          <div class="blocker-rows">
-            ${attackers.map((attacker) => `
-              <label>
-                <span><strong>${attacker.card.name}</strong> ${attacker.card.attack}/${attacker.card.health}</span>
-                <select data-block-attacker="${attacker.card.instanceId}">
-                  <option value="">Take the hit</option>
-                  ${blockers.filter((blocker) => canBlock(attacker, blocker)).map((blocker) => `<option value="${blocker.card.instanceId}">${blocker.card.name} ${blocker.card.attack}/${blocker.card.health - blocker.damage}</option>`).join("")}
-                </select>
-              </label>
-            `).join("")}
-          </div>
-          <div class="decision-actions">
-            <button class="primary-action" data-action="resolve-blocks">RESOLVE COMBAT</button>
-            <button class="quiet-action" data-action="no-blocks">NO BLOCKS</button>
-          </div>
-        </section>
-      </div>
-    `;
+    return blockerPromptMarkup(state, declaration, blockers);
   }
 
   function resultPrompt(current: MatchState): string {
@@ -1255,7 +1240,7 @@ export function mountMatch(
   }
 
   function scheduleAi(): void {
-    if (mode !== "ai" || disposed || aiPresentationActive || state.result || state.phase === "mulligan") {
+    if (mode !== "ai" || disposed || aiPresentationActive || combatPresentationActive || state.result || state.phase === "mulligan") {
       return;
     }
     if (state.responsePlayer !== AI && state.activePlayer !== AI) {
@@ -1906,43 +1891,75 @@ export function mountMatch(
 
   function resolveCombatPlan(plan: CombatPlan, shouldRender = true): void {
     const before = state;
-    animateCombat(plan);
     state = resolveCombat(state, plan);
-    syncScene(before, state);
     announce(
       `combat:${plan.turnNumber}:${plan.attackingPlayer}:${plan.attackerIds.join(",")}`,
       combatAnnouncement(plan, state.result),
     );
     announceStateTransition(before, state);
-    notice = "Combat resolved.";
-    if (shouldRender) {
-      render();
+    const beats = buildCombatPresentation(before, plan, localPlayerId());
+    if (!shouldRender || beats.length === 0) {
+      for (const beat of beats) animateCombatBeat(beat);
+      syncScene(before, state);
+      notice = "Combat resolved.";
+      if (shouldRender) render();
+      return;
+    }
+
+    combatPresentationActive = true;
+    combatPresentation.play(
+      beats,
+      (beat) => presentCombatBeat(beat),
+      () => finishCombatPresentation(before),
+    );
+  }
+
+  function presentCombatBeat(beat: CombatPresentationBeat): void {
+    if (disposed) return;
+    combatPresentationBeat = beat;
+    notice = beat.headline;
+    animateCombatBeat(beat);
+    render();
+  }
+
+  function animateCombatBeat(beat: CombatPresentationBeat): void {
+    const target: AnimationAnchor = beat.blockerId && arena.getMonster(beat.blockerId)
+      ? { kind: "monster", monsterId: beat.blockerId }
+      : { kind: "side", side: sideFor(beat.defendingPlayer) };
+    if (beat.kind === "engage") {
+      arena.dispatchAnimation({ type: "combat-link", attackerId: beat.attackerId, target });
+      return;
+    }
+
+    arena.dispatchAnimation({ type: "attack", attackerId: beat.attackerId, target });
+    if (beat.blockerId && arena.getMonster(beat.blockerId)) {
+        arena.dispatchAnimation({
+          type: "hit",
+          monsterId: beat.blockerId,
+          from: { kind: "monster", monsterId: beat.attackerId },
+        });
+        arena.dispatchAnimation({
+          type: "hit",
+          monsterId: beat.attackerId,
+          from: { kind: "monster", monsterId: beat.blockerId },
+        });
     }
   }
 
-  function animateCombat(plan: CombatPlan): void {
-    const blockers = new Map(
-      plan.blocks.map((block) => [block.attackerId, block.blockerId]),
-    );
-    for (const attackerId of plan.attackerIds) {
-      const blockerId = blockers.get(attackerId);
-      const target: AnimationAnchor = blockerId && arena.getMonster(blockerId)
-        ? { kind: "monster", monsterId: blockerId }
-        : { kind: "side", side: sideFor(plan.defendingPlayer) };
-      arena.dispatchAnimation({ type: "attack", attackerId, target });
-      if (blockerId && arena.getMonster(blockerId)) {
-        arena.dispatchAnimation({
-          type: "hit",
-          monsterId: blockerId,
-          from: { kind: "monster", monsterId: attackerId },
-        });
-        arena.dispatchAnimation({
-          type: "hit",
-          monsterId: attackerId,
-          from: { kind: "monster", monsterId: blockerId },
-        });
-      }
-    }
+  function finishCombatPresentation(before: MatchState): void {
+    if (disposed) return;
+    combatPresentationActive = false;
+    combatPresentationBeat = null;
+    syncScene(before, state);
+    notice = "Combat resolved.";
+    render();
+    scheduleAi();
+  }
+
+  function clearCombatPresentation(): void {
+    combatPresentation.clear();
+    combatPresentationActive = false;
+    combatPresentationBeat = null;
   }
 
   function advanceLocalPhase(): void {
@@ -2269,6 +2286,7 @@ export function mountMatch(
         }
         clearAnimationTimers();
         clearAiPresentation();
+        clearCombatPresentation();
         interruptDrawAnimations();
         for (const id of [...sceneIds]) {
           arena.removeMonster(id);
@@ -2338,7 +2356,7 @@ export function mountMatch(
     () => document.activeElement,
     () => ({
       targetingActive: pendingTarget !== null,
-      responseWindowOpen: state.responsePlayer !== null,
+      responseWindowOpen: state.responsePlayer !== null || aiPresentationActive || combatPresentationActive,
       mulliganDecisionPending: state.phase === "mulligan",
       hotseatCurtainOpen: privacyCurtain !== null,
     }),
@@ -2352,6 +2370,7 @@ export function mountMatch(
       disposed = true;
       window.clearTimeout(aiTimer);
       clearAiPresentation();
+      clearCombatPresentation();
       window.clearTimeout(emptyCombatTimer);
       window.clearTimeout(summonTipTimer);
       window.clearTimeout(coachMarkTimer);
@@ -2536,6 +2555,40 @@ export function responseWindowMessage(
     return `${actor} is fusing ${item.parentNames.join(" + ")}.`;
   }
   return `${actor} has cast ${item.card.name}.`;
+}
+
+export function blockerPromptMarkup(
+  state: MatchState,
+  declaration: AttackDeclaration,
+  blockers: readonly MonsterPermanent[],
+): string {
+  const attackers = getPlayer(state, declaration.attackingPlayer).monsters.filter((monster) =>
+    declaration.attackerIds.includes(monster.card.instanceId),
+  );
+  return `
+    <div class="decision-backdrop">
+      <section class="decision-panel blocker-panel" data-testid="blocker-prompt">
+        <span class="eyebrow">INCOMING ATTACK</span>
+        <h1>Assign blockers</h1>
+        <p class="tutorial-copy">Each beast can block one attacker. Flying attackers require Flying or Reach. Extra ATK beyond a blocker's remaining HP hits you.</p>
+        <div class="blocker-rows">
+          ${attackers.map((attacker) => `
+            <label>
+              <span><strong>${attacker.card.name}</strong> ${attacker.card.attack}/${attacker.card.health}</span>
+              <select data-block-attacker="${attacker.card.instanceId}">
+                <option value="">Take the hit</option>
+                ${blockers.filter((blocker) => canBlock(attacker, blocker)).map((blocker) => `<option value="${blocker.card.instanceId}">${blocker.card.name} ${blocker.card.attack}/${blocker.card.health - blocker.damage}</option>`).join("")}
+              </select>
+            </label>
+          `).join("")}
+        </div>
+        <div class="decision-actions">
+          <button class="primary-action" data-action="resolve-blocks">RESOLVE COMBAT</button>
+          <button class="quiet-action" data-action="no-blocks">NO BLOCKS</button>
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function sideFor(playerId: PlayerId): "player" | "opponent" {

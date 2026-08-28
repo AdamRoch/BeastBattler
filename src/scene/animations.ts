@@ -26,6 +26,11 @@ export type SpellAnimation =
 export type ArenaAnimationEvent =
   | { type: "summon"; monsterId: string }
   | {
+      type: "combat-link";
+      attackerId: string;
+      target: AnimationAnchor;
+    }
+  | {
       type: "attack";
       attackerId: string;
       target: AnimationAnchor;
@@ -388,6 +393,38 @@ export function createArenaAnimationSystem(
     );
   }
 
+  function playCombatLink(attackerId: string, target: AnimationAnchor): void {
+    const from = requireMonster(attackerId).getWorldPosition(new THREE.Vector3());
+    from.y += 0.8;
+    const to = anchorPosition(target);
+    const positions = new Float32Array(6);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      blending: THREE.AdditiveBlending,
+      color: 0x7be6ff,
+      depthWrite: false,
+      opacity: 0,
+      transparent: true,
+    });
+    const line = new THREE.Line(geometry, material);
+    line.name = "combat-link";
+    effectLayer.add(line);
+
+    schedule(
+      0.72,
+      (progress) => {
+        const end = from.clone().lerp(to, smoothstep(0, 0.42, progress));
+        const attribute = geometry.getAttribute("position") as THREE.BufferAttribute;
+        attribute.setXYZ(0, from.x, from.y, from.z);
+        attribute.setXYZ(1, end.x, end.y, end.z);
+        attribute.needsUpdate = true;
+        material.opacity = smoothstep(0, 0.16, progress) * (1 - smoothstep(0.78, 1, progress));
+      },
+      () => disposeEffect(line),
+    );
+  }
+
   function playHit(monsterId: string, from?: AnimationAnchor): void {
     const monster = requireMonster(monsterId);
     const basePosition = monster.position.clone();
@@ -712,6 +749,9 @@ export function createArenaAnimationSystem(
     switch (event.type) {
       case "summon":
         playSummon(event.monsterId);
+        return;
+      case "combat-link":
+        playCombatLink(event.attackerId, event.target);
         return;
       case "attack":
         playAttack(event.attackerId, event.target);
