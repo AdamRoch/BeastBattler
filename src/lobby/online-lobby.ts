@@ -1,8 +1,8 @@
 import {
   ARCHETYPES,
-  deriveExtraDeck,
   type ArchetypeId,
 } from "../cards/catalog";
+import { buildDeckPreview, deckPreviewMarkup } from "../cards/deck-preview";
 import {
   PROTOCOL_VERSION,
   type ClientMessage,
@@ -464,12 +464,14 @@ function matchRow(match: LobbyMatch): string {
 
 function lobbyArchetypeCard(archetype: (typeof ARCHETYPES)[number], selected: boolean): string {
   const [first, second] = archetype.elements;
-  const fusionNames = deriveExtraDeck(archetype.id).map((card) => card.name.replace(" Beast", "")).join(" · ");
+  const preview = buildDeckPreview(archetype.id);
+  const fusionNames = preview.fusions.map((card) => card.name.replace(" Beast", "")).join(" · ");
   return `
-    <button class="lobby-archetype-card${selected ? " is-selected" : ""}" data-lobby-action="pick-archetype" data-archetype="${archetype.id}">
+    <button class="lobby-archetype-card${selected ? " is-selected" : ""}" data-lobby-action="pick-archetype" data-archetype="${archetype.id}" aria-label="Choose ${elementName(first)} and ${elementName(second)}" aria-describedby="deck-preview-${archetype.id}">
       <span class="element-pair"><i class="element-orb element-${first}"></i><i class="element-link"></i><i class="element-orb element-${second}"></i></span>
       <strong>${elementName(first)} + ${elementName(second)}</strong>
       <small>${fusionNames}</small>
+      ${deckPreviewMarkup(preview)}
     </button>
   `;
 }

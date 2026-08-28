@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { resultHandoffScreen, resultScreen } from "./controller";
+import { archetypeCard, resultHandoffScreen, resultScreen } from "./controller";
+import { ARCHETYPES } from "../cards/catalog";
 import type { AppState } from "./state";
 
 describe("result screens", () => {
@@ -47,6 +48,20 @@ describe("result screens", () => {
     expect(loserMarkup).toContain("Shadow Realm");
     expect(loserMarkup).toContain("Your life counter reached zero.");
     expect(handoff).toContain("I'M PLAYER 2");
+  });
+});
+
+describe("deck selection", () => {
+  it("describes each deck with a focusable catalog-derived preview", () => {
+    const archetype = ARCHETYPES.find((candidate) => candidate.id === "fire-lightning");
+    if (!archetype) throw new Error("Missing test archetype");
+
+    const markup = archetypeCard(archetype);
+
+    expect(markup).toContain('aria-describedby="deck-preview-fire-lightning"');
+    expect(markup).toContain("20 CARDS");
+    expect(markup).toContain("Flying attackers: Volt Bat.");
+    expect(markup).toContain("Counter a monster summon or spell.");
   });
 });
 

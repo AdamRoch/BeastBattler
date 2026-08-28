@@ -1,9 +1,9 @@
 import type { ArenaScene } from "../arena";
 import {
   ARCHETYPES,
-  deriveExtraDeck,
   type ArchetypeId,
 } from "../cards/catalog";
+import { buildDeckPreview, deckPreviewMarkup } from "../cards/deck-preview";
 import { mountMatch, type MatchController } from "../match/controller";
 import {
   mountOnlineLobby,
@@ -308,10 +308,11 @@ function deckScreen(state: AppState): string {
   `;
 }
 
-function archetypeCard(
+export function archetypeCard(
   archetype: (typeof ARCHETYPES)[number],
 ): string {
-  const fusionNames = deriveExtraDeck(archetype.id)
+  const preview = buildDeckPreview(archetype.id);
+  const fusionNames = preview.fusions
     .map((card) => card.name.replace(" Beast", ""))
     .join(" · ");
   const [first, second] = archetype.elements;
@@ -321,6 +322,7 @@ function archetypeCard(
       data-screen-action="select-deck"
       data-archetype="${archetype.id}"
       aria-label="Choose ${elementName(first)} and ${elementName(second)}"
+      aria-describedby="deck-preview-${archetype.id}"
     >
       <span class="element-pair">
         <i class="element-orb element-${first}"></i>
@@ -329,6 +331,7 @@ function archetypeCard(
       </span>
       <strong>${elementName(first)} + ${elementName(second)}</strong>
       <small>${fusionNames}</small>
+      ${deckPreviewMarkup(preview)}
     </button>
   `;
 }
