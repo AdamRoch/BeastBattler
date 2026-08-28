@@ -90,6 +90,44 @@ describe("VS AI arena reconciliation", () => {
     document.body.replaceChildren();
   });
 
+  it("places the human Moss Tortoise after the AI resolves its response", () => {
+    vi.useFakeTimers();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const arena = createArenaScene(16 / 9);
+    const controller = mountMatch(root, arena, {
+      mode: "ai",
+      playerOneArchetype: "fire-earth",
+      initialState: humanMossTortoiseSummonState(),
+    });
+
+    click(root, '[data-card-id="summon-moss-tortoise"]');
+    expect(controller.getState().responsePlayer).toBe("player-2");
+
+    // A delayed retirement can leave a renderer-only object in the final
+    // player slot while rules still permits this summon.
+    arena.placeMonster(
+      "retired-player-animation-object",
+      { side: "player", slot: 2 },
+      new THREE.Group(),
+    );
+
+    vi.advanceTimersByTime(360);
+
+    const moss = getPlayer(controller.getState(), "player-1").monsters.find(
+      (monster) => monster.card.instanceId === "summon-moss-tortoise",
+    );
+    expect(moss?.card.name).toBe("Moss Tortoise");
+    const arenaMoss = arena.getMonster(moss?.card.instanceId ?? "");
+    expect(arenaMoss?.userData.monsterId).toBe(moss?.card.instanceId);
+    expect(
+      arenaMoss?.getObjectByName("summoning-sickness-indicator"),
+    ).toBeTruthy();
+    expect(arena.getMonster("retired-player-animation-object")).toBeUndefined();
+
+    controller.dispose();
+  });
+
   it.each([
     ["Moss Tortoise", "moss-tortoise"],
     ["Stone Bull", "stone-bull"],
@@ -216,6 +254,52 @@ function aiSummonState(cardId: string): MatchState {
     monsters: [
       permanent(stoneBull, "ai-stone-bull"),
       permanent(sparkLynx, "ai-spark-lynx"),
+    ],
+    landPlayedThisTurn: true,
+  });
+}
+
+function humanMossTortoiseSummonState(): MatchState {
+  const deck = assembleDeck("fire-earth");
+  const mossTortoise = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "moss-tortoise",
+  );
+  const cinderWall = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "cinder-wall",
+  );
+  const stoneBull = deck.find(
+    (candidate): candidate is BaseMonsterCard =>
+      candidate.kind === "monster" &&
+      candidate.category === "base-monster" &&
+      candidate.id === "stone-bull",
+  );
+  const earthLand = deck.find(
+    (candidate): candidate is LandCard =>
+      candidate.kind === "land" && candidate.element === "earth",
+  );
+  if (!mossTortoise || !cinderWall || !stoneBull || !earthLand) {
+    throw new Error("Missing deterministic human Moss Tortoise fixtures");
+  }
+
+  const state = createMatch({
+    playerOneDeck: deck,
+    playerTwoDeck: assembleDeck("earth-lightning"),
+    playerOneExtraDeck: deriveExtraDeck("fire-earth"),
+    playerTwoExtraDeck: deriveExtraDeck("earth-lightning"),
+    firstPlayer: "player-1",
+  });
+  return withPlayer({ ...state, activePlayer: "player-1", phase: "main", turnNumber: 5 }, "player-1", {
+    hand: [{ ...mossTortoise, instanceId: "summon-moss-tortoise" }],
+    lands: [readyLand(earthLand, "human-earth-land-1")],
+    monsters: [
+      permanent(cinderWall, "human-cinder-wall"),
+      permanent(stoneBull, "human-stone-bull"),
     ],
     landPlayedThisTurn: true,
   });
