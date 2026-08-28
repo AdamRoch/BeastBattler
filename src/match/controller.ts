@@ -1,4 +1,5 @@
 import { runAiTurn, type AiAction } from "../ai/opponent";
+import type { Object3D } from "three";
 import type { ArenaScene, AnimationAnchor } from "../arena";
 import {
   CARD_ART_IDS,
@@ -1374,7 +1375,7 @@ export function mountMatch(
         target: { kind: "side", side: sideFor(opponentOfPlayer(fusionId, before)) },
       });
     }
-    scheduleSceneCleanup(() => removeRetained(baseMonsterId), 1450);
+    scheduleRetainedRemoval(baseMonsterId, 1450);
   }
 
   function showUpgradeReveals(before: MatchState, after: MatchState): void {
@@ -1427,10 +1428,8 @@ export function mountMatch(
               target: { kind: "side", side: sideFor(opponentId(item.controller)) },
             });
           }
-          scheduleSceneCleanup(() => {
-            removeRetained(sources[0]);
-            removeRetained(sources[1]);
-          }, 2450);
+          scheduleRetainedRemoval(sources[0], 2450);
+          scheduleRetainedRemoval(sources[1], 2450);
         }
         pendingFusionSources.delete(item.stackId);
         pendingFusionReveals.delete(item.stackId);
@@ -1490,8 +1489,11 @@ export function mountMatch(
   function syncScene(before: MatchState, after: MatchState): void {
     const nextMonsters = allMonsters(after);
     const nextIds = new Set(nextMonsters.map((entry) => entry.monster.card.instanceId));
+    if (nextIds.size !== nextMonsters.length) {
+      throw new Error("Arena reconciliation failed: authoritative monster IDs are not unique");
+    }
 
-    reconcileArenaOccupancy(nextIds);
+    reconcileArenaOccupancy(nextMonsters, nextIds);
 
     if (summonTip.shouldShow(before, after, localPlayerId())) {
       showSummonTip();
@@ -1537,34 +1539,43 @@ export function mountMatch(
    * resolved summon. Treat MatchState as the authority and repair the local
    * registry before placing anything new.
    */
-  function reconcileArenaOccupancy(nextIds: ReadonlySet<string>): void {
-    for (const side of ["player", "opponent"] as const) {
-      for (const slot of [0, 1, 2] as const) {
-        const object = arena.getMonsterAt({ side, slot });
-        if (!object) {
-          continue;
-        }
-        const monsterId = object.userData.monsterId;
-        if (typeof monsterId !== "string" || !nextIds.has(monsterId)) {
-          if (typeof monsterId !== "string") {
-            throw new Error(
-              `Arena reconciliation failed: ${side}:${slot} has an unnamed monster object`,
-            );
-          }
-          arena.removeMonster(monsterId);
-          sceneIds.delete(monsterId);
-          retainedSceneIds.delete(monsterId);
-          continue;
-        }
-        sceneIds.add(monsterId);
+  function reconcileArenaOccupancy(
+    nextMonsters: ReturnType<typeof allMonsters>,
+    nextIds: ReadonlySet<string>,
+  ): void {
+    for (const monsterId of arena.getMonsterIds()) {
+      if (nextIds.has(monsterId)) continue;
+      // Retired objects may still need a death or fusion animation, but they
+      // must stop reserving a rules slot immediately.
+      arena.releaseMonsterZone(monsterId);
+    }
+
+    // Release authoritative objects that are not currently occupying the
+    // correct side. Releasing all of them first makes swaps deterministic.
+    for (const entry of nextMonsters) {
+      const id = entry.monster.card.instanceId;
+      const zone = arena.getMonsterZone(id);
+      if (arena.getMonster(id) && zone?.side !== entry.side) {
+        arena.releaseMonsterZone(id);
       }
     }
 
-    for (const monsterId of [...sceneIds]) {
-      if (!arena.getMonster(monsterId)) {
-        sceneIds.delete(monsterId);
+    for (const entry of nextMonsters) {
+      const id = entry.monster.card.instanceId;
+      if (!arena.getMonster(id) || arena.getMonsterZone(id)?.side === entry.side) {
+        continue;
       }
+      const slot = firstOpenSlot(entry.side);
+      if (slot === null) {
+        throw new Error(
+          `Arena reconciliation failed: no ${entry.side} slot for authoritative monster ${id}`,
+        );
+      }
+      arena.moveMonster(id, { side: entry.side, slot });
     }
+
+    sceneIds.clear();
+    for (const monsterId of arena.getMonsterIds()) sceneIds.add(monsterId);
   }
 
   function showSummonTip(): void {
@@ -1744,17 +1755,18 @@ export function mountMatch(
   }
 
   function retireMonster(monsterId: string, animateDeath: boolean): void {
-    if (!arena.getMonster(monsterId)) {
+    const expectedObject = arena.getMonster(monsterId);
+    if (!expectedObject) {
       sceneIds.delete(monsterId);
       return;
     }
     arena.releaseMonsterZone(monsterId);
     if (animateDeath) {
       arena.dispatchAnimation({ type: "death", monsterId });
-      scheduleSceneCleanup(() => {
-        arena.removeMonster(monsterId);
-        sceneIds.delete(monsterId);
-      }, 950);
+      scheduleSceneCleanup(
+        () => removeSceneMonsterIfRetired(monsterId, expectedObject),
+        950,
+      );
       return;
     }
     arena.removeMonster(monsterId);
@@ -1770,8 +1782,33 @@ export function mountMatch(
     return null;
   }
 
-  function removeRetained(monsterId: string): void {
+  function removeRetained(
+    monsterId: string,
+    expectedObject: Object3D | undefined = arena.getMonster(monsterId),
+  ): void {
     retainedSceneIds.delete(monsterId);
+    if (findMonster(state, monsterId) || arena.getMonster(monsterId) !== expectedObject) {
+      reconcileArenaOccupancy(allMonsters(state), new Set(allMonsters(state).map(
+        (entry) => entry.monster.card.instanceId,
+      )));
+      return;
+    }
+    arena.removeMonster(monsterId);
+    sceneIds.delete(monsterId);
+  }
+
+  function scheduleRetainedRemoval(monsterId: string, delay: number): void {
+    const expectedObject = arena.getMonster(monsterId);
+    scheduleSceneCleanup(() => removeRetained(monsterId, expectedObject), delay);
+  }
+
+  function removeSceneMonsterIfRetired(
+    monsterId: string,
+    expectedObject: Object3D,
+  ): void {
+    if (findMonster(state, monsterId) || arena.getMonster(monsterId) !== expectedObject) {
+      return;
+    }
     arena.removeMonster(monsterId);
     sceneIds.delete(monsterId);
   }
@@ -2361,6 +2398,7 @@ export function mountMatch(
       hotseatCurtainOpen: privacyCurtain !== null,
     }),
   );
+  syncScene(state, state);
   render();
   scheduleAi();
 
