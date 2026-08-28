@@ -2000,7 +2000,7 @@ canvas {
 .result-game-title-original {
   position: relative;
   color: #f5d0dc;
-  animation: result-game-title-exit 1ms linear 1.3s forwards;
+  animation: result-game-title-exit 180ms ease-in 920ms forwards;
 }
 
 .result-game-title-original::after {
@@ -2022,7 +2022,7 @@ canvas {
   font-weight: 900;
   opacity: 0;
   transform: scale(0.94);
-  animation: result-game-title-reveal 180ms ease-out 1.3s forwards;
+  animation: result-game-title-reveal 180ms ease-out 1.16s forwards;
 }
 
 .result-message,
@@ -2048,7 +2048,7 @@ canvas {
 }
 
 @keyframes result-game-title-exit {
-  to { visibility: hidden; }
+  to { opacity: 0; visibility: hidden; }
 }
 
 @keyframes result-game-title-reveal {
@@ -2062,7 +2062,7 @@ canvas {
     animation: none;
   }
 
-  .result-game-title-original { visibility: hidden; }
+  .result-game-title-original { opacity: 0; visibility: hidden; }
   .result-game-title-replacement { opacity: 1; transform: none; }
 }
 
