@@ -54,6 +54,7 @@ describe("result messages", () => {
 
     expect(WINNER_GAME_BEFORE).toBe("You have won at the game of Yu-Gi-Oh!");
     expect(WINNER_GAME_AFTER).toBe("You have won at the game of Beast Battler");
+    expect(markup).toContain(`aria-label="${WINNER_GAME_AFTER}"`);
     expect(markup).toContain('class="result-game-title-original"');
     expect(markup).toContain('class="result-game-title-replacement"');
     expect(markup).toContain(WINNER_MESSAGE);
