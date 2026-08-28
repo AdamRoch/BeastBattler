@@ -374,7 +374,7 @@ export function mountMatch(
         <section class="turn-panel">
           <span>TURN ${state.turnNumber || "SETUP"}</span>
           <strong>${phaseLabel(state)}</strong>
-          <small>${mode === "hotseat" ? `PLAYER ${priorityPlayer === HUMAN ? 1 : 2} PRIORITY` : state.activePlayer === HUMAN ? "YOUR PRIORITY" : "OPPONENT PRIORITY"}</small>
+          <small>${mode === "hotseat" ? `PLAYER ${priorityPlayer === HUMAN ? 1 : 2} PRIORITY` : priorityPlayer === HUMAN ? "YOUR PRIORITY" : "OPPONENT PRIORITY"}</small>
         </section>
         <section class="life-panel life-opponent" data-testid="opponent-life" data-player-id="${AI}">
           <span class="life-label">${mode === "hotseat" ? "PLAYER 2" : mode === "online" ? "OPPONENT" : "AI"}</span>
@@ -699,8 +699,13 @@ export function mountMatch(
   }
 
   function phaseActions(player: MatchState["players"][number]): string {
-    if (state.result || state.phase === "mulligan" || state.responsePlayer) {
+    if (state.result || state.phase === "mulligan") {
       return "";
+    }
+    if (state.responsePlayer) {
+      return mode === "ai" && state.responsePlayer !== player.id
+        ? '<button class="primary-action" disabled>AI RESPONDING</button>'
+        : "";
     }
     if (state.activePlayer !== player.id) {
       return mode === "ai"
@@ -1048,6 +1053,19 @@ export function mountMatch(
       return;
     }
     dismissCoachMarkForCard(cardId);
+    if (card.kind === "spell" && card.id === "counterspell") {
+      notice = "Counterspell can only be played in a response window.";
+      render();
+      return;
+    }
+    if (!isCardPlayable(card)) {
+      notice = state.responsePlayer
+        ? "Wait for the opponent's response before playing another card."
+        : `${card.name} cannot be played right now.`;
+      render();
+      scheduleAi();
+      return;
+    }
     if (online) {
       if (card.kind === "land") {
         sendOnlineIntent({ kind: "play-land", cardId }, `${card.name} sent to the server.`);
@@ -1055,11 +1073,6 @@ export function mountMatch(
       }
       if (card.kind === "monster") {
         sendOnlineIntent({ kind: "summon", cardId }, `${card.name} sent to the server.`);
-        return;
-      }
-      if (card.id === "counterspell") {
-        notice = "Counterspell can only be played in a response window.";
-        render();
         return;
       }
       if (card.id === "draw") {
@@ -1080,11 +1093,6 @@ export function mountMatch(
         const next = summonMonster(state, playerId, cardId);
         applyState(next, `${card.name} waits on the stack.`);
         scheduleAi();
-        return;
-      }
-      if (card.id === "counterspell") {
-        notice = "Counterspell can only be played in a response window.";
-        render();
         return;
       }
       if (card.id === "draw") {
@@ -2271,6 +2279,7 @@ export function mountMatch(
         clearTargetingState();
         notice = "Spell targeting canceled.";
         render();
+        scheduleAi();
         return;
       case "counter":
         counterPendingAction();
