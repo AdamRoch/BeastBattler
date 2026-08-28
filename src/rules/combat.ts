@@ -26,6 +26,19 @@ export interface CombatPlan extends AttackDeclaration {
   readonly blocks: readonly BlockAssignment[];
 }
 
+export interface CombatDamageExchange {
+  readonly attackerId: string;
+  readonly blockerId: string | null;
+  readonly damageToAttacker: number;
+  readonly damageToBlocker: number;
+  readonly damageToDefendingPlayer: number;
+}
+
+export interface CombatDamageReport {
+  readonly exchanges: readonly CombatDamageExchange[];
+  readonly totalDamageToDefendingPlayer: number;
+}
+
 /** Returns whether this blocker can legally block this attacker. */
 export function canBlock(
   attacker: MonsterPermanent,
@@ -114,44 +127,17 @@ export function resolveCombat(
   state: MatchState,
   plan: CombatPlan,
 ): MatchState {
-  validateDeclarationContext(state, plan);
-  const declaration = declareAttackers(
-    state,
-    plan.attackingPlayer,
-    plan.attackerIds,
-  );
-  assignBlockers(state, plan.defendingPlayer, declaration, plan.blocks);
-
+  const report = calculateCombatDamage(state, plan);
   const attackingPlayer = getPlayer(state, plan.attackingPlayer);
   const defendingPlayer = getPlayer(state, plan.defendingPlayer);
-  const blocksByAttacker = new Map(
-    plan.blocks.map((block) => [block.attackerId, block.blockerId]),
+  const damageToAttackers = new Map(
+    report.exchanges.map((exchange) => [exchange.attackerId, exchange.damageToAttacker]),
   );
-  const damageToAttackers = new Map<string, number>();
-  const damageToBlockers = new Map<string, number>();
-  let damageToDefendingPlayer = 0;
-
-  for (const attackerId of plan.attackerIds) {
-    const attacker = findMonster(attackingPlayer, attackerId, "attacker");
-    const blockerId = blocksByAttacker.get(attackerId);
-
-    if (!blockerId) {
-      damageToDefendingPlayer += attacker.card.attack;
-      continue;
-    }
-
-    const blocker = findMonster(defendingPlayer, blockerId, "blocker");
-    damageToBlockers.set(blockerId, attacker.card.attack);
-    damageToAttackers.set(attackerId, blocker.card.attack);
-    const blockerRemainingHealth = Math.max(
-      0,
-      blocker.card.health - blocker.damage,
-    );
-    damageToDefendingPlayer += Math.max(
-      0,
-      attacker.card.attack - blockerRemainingHealth,
-    );
-  }
+  const damageToBlockers = new Map(
+    report.exchanges.flatMap((exchange) => exchange.blockerId
+      ? [[exchange.blockerId, exchange.damageToBlocker] as const]
+      : []),
+  );
 
   const damagedAttackers = applyMonsterDamage(
     attackingPlayer,
@@ -179,10 +165,71 @@ export function resolveCombat(
   const resolvedState = dealPlayerDamage(
     stateAfterDeaths,
     plan.defendingPlayer,
-    damageToDefendingPlayer,
+    report.totalDamageToDefendingPlayer,
   );
 
   return { ...resolvedState, phase: "end" };
+}
+
+/**
+ * Produces the authoritative per-matchup damage ledger used by both rules and
+ * presentation. Blocked attacks universally trample past remaining blocker HP.
+ */
+export function calculateCombatDamage(
+  state: MatchState,
+  plan: CombatPlan,
+): CombatDamageReport {
+  validateDeclarationContext(state, plan);
+  const declaration = declareAttackers(
+    state,
+    plan.attackingPlayer,
+    plan.attackerIds,
+  );
+  assignBlockers(state, plan.defendingPlayer, declaration, plan.blocks);
+
+  const attackingPlayer = getPlayer(state, plan.attackingPlayer);
+  const defendingPlayer = getPlayer(state, plan.defendingPlayer);
+  const blocksByAttacker = new Map(
+    plan.blocks.map((block) => [block.attackerId, block.blockerId]),
+  );
+  const exchanges: CombatDamageExchange[] = [];
+
+  for (const attackerId of plan.attackerIds) {
+    const attacker = findMonster(attackingPlayer, attackerId, "attacker");
+    const blockerId = blocksByAttacker.get(attackerId);
+
+    if (!blockerId) {
+      exchanges.push({
+        attackerId,
+        blockerId: null,
+        damageToAttacker: 0,
+        damageToBlocker: 0,
+        damageToDefendingPlayer: attacker.card.attack,
+      });
+      continue;
+    }
+
+    const blocker = findMonster(defendingPlayer, blockerId, "blocker");
+    const blockerRemainingHealth = Math.max(
+      0,
+      blocker.card.health - blocker.damage,
+    );
+    exchanges.push({
+      attackerId,
+      blockerId,
+      damageToAttacker: blocker.card.attack,
+      damageToBlocker: attacker.card.attack,
+      damageToDefendingPlayer: Math.max(0, attacker.card.attack - blockerRemainingHealth),
+    });
+  }
+
+  return {
+    exchanges,
+    totalDamageToDefendingPlayer: exchanges.reduce(
+      (total, exchange) => total + exchange.damageToDefendingPlayer,
+      0,
+    ),
+  };
 }
 
 function validateDeclarationContext(

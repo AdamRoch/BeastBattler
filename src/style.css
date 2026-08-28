@@ -896,6 +896,65 @@ canvas {
   animation: empty-combat-notice 800ms ease-out both;
 }
 
+.combat-presentation {
+  position: absolute;
+  z-index: 24;
+  top: 126px;
+  left: 50%;
+  display: grid;
+  width: min(440px, calc(100vw - 48px));
+  justify-items: center;
+  padding: 14px 20px 16px;
+  border: 1px solid rgba(118, 227, 255, 0.66);
+  border-radius: 4px 14px 4px 14px;
+  background: linear-gradient(145deg, rgba(7, 20, 32, 0.97), rgba(3, 8, 15, 0.94));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.58), 0 0 28px rgba(66, 204, 244, 0.17);
+  text-align: center;
+  transform: translateX(-50%);
+  animation: combat-presentation-in 180ms ease-out both;
+}
+
+.combat-presentation > span {
+  color: #76dffb;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+}
+
+.combat-presentation > strong {
+  margin-top: 6px;
+  color: #f1fbff;
+  font-family: "Arial Narrow", Impact, sans-serif;
+  font-size: 24px;
+  letter-spacing: 0.04em;
+}
+
+.combat-presentation > p {
+  margin: 4px 0 0;
+  color: #a8c2ce;
+  font-size: 11px;
+}
+
+.combat-presentation ul {
+  display: grid;
+  gap: 3px;
+  margin: 10px 0 0;
+  padding: 0;
+  color: #e4f2f7;
+  font-size: 11px;
+  list-style: none;
+}
+
+.combat-presentation-impact {
+  border-color: rgba(255, 181, 92, 0.72);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.58), 0 0 30px rgba(255, 146, 61, 0.18);
+}
+
+@keyframes combat-presentation-in {
+  from { opacity: 0; transform: translate(-50%, -8px) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
 .primary-action,
 .quiet-action,
 .text-action,

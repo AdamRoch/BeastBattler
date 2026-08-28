@@ -69,6 +69,24 @@ describe("arena animation events", () => {
     expect(arena.getMonster("Reef Guardian")).toBe(attacker);
   });
 
+  it("draws and removes the combat assignment connector", () => {
+    const arena = createArenaScene(16 / 9);
+    arena.placeMonster("Reef Guardian", { side: "player", slot: 0 });
+    arena.placeMonster("Ember Imp", { side: "opponent", slot: 0 });
+
+    arena.update(24);
+    arena.dispatchAnimation({
+      type: "combat-link",
+      attackerId: "Reef Guardian",
+      target: { kind: "monster", monsterId: "Ember Imp" },
+    });
+    arena.update(24.3);
+    expect(animationLayer(arena).getObjectByName("combat-link")).toBeDefined();
+
+    arena.update(24.8);
+    expect(animationLayer(arena).getObjectByName("combat-link")).toBeUndefined();
+  });
+
   it("plays the fusion spiral and the shorter star3 sequence", () => {
     const arena = createArenaScene(16 / 9);
     const first = arena.placeMonster("Ember Imp", {

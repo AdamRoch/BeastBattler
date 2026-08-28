@@ -15,6 +15,7 @@ describe("procedural sound effects", () => {
   it("maps every arena animation to a sound signature", () => {
     const events: readonly ArenaAnimationEvent[] = [
       { type: "summon", monsterId: "monster" },
+      { type: "combat-link", attackerId: "monster", target: { kind: "side", side: "opponent" } },
       { type: "attack", attackerId: "monster", target: { kind: "side", side: "opponent" } },
       { type: "hit", monsterId: "monster" },
       { type: "death", monsterId: "monster" },
@@ -29,6 +30,7 @@ describe("procedural sound effects", () => {
 
     expect(events.map(effectForAnimation)).toEqual([
       "summon",
+      "attack",
       "attack",
       "hit",
       "death",

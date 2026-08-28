@@ -22,6 +22,7 @@ import {
 } from "../rules/core";
 import {
   cardKeywordMarkup,
+  blockerPromptMarkup,
   createFusionUpgradeOption,
   mountMatch,
   responseWindowMessage,
@@ -191,6 +192,40 @@ describe("hand-card keywords", () => {
     expect(cardKeywordMarkup(voltBat)).toContain("FLYING");
     expect(cardKeywordMarkup(cinderWall)).toContain("REACH");
     expect(cardKeywordMarkup(emberImp)).toBe("");
+  });
+});
+
+describe("blocker selection guidance", () => {
+  it("offers Reach and Flying against Flying while excluding ground-only blockers", () => {
+    const deck = assembleDeck("fire-lightning");
+    const attacker = deck.find((card): card is BaseMonsterCard =>
+      card.kind === "monster" && card.category === "base-monster" && card.id === "volt-bat");
+    const reach = deck.find((card): card is BaseMonsterCard =>
+      card.kind === "monster" && card.category === "base-monster" && card.id === "cinder-wall");
+    const ground = deck.find((card): card is BaseMonsterCard =>
+      card.kind === "monster" && card.category === "base-monster" && card.id === "ember-imp");
+    if (!attacker || !reach || !ground) throw new Error("Missing blocker UI fixtures");
+
+    let state = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
+    state = { ...state, activePlayer: "player-1", phase: "combat", turnNumber: 3 };
+    state = withPlayer(state, "player-1", { monsters: [permanent(attacker, "flying-attacker")] });
+    state = withPlayer(state, "player-2", {
+      monsters: [permanent(reach, "reach-blocker"), permanent(attacker, "flying-blocker"), permanent(ground, "ground-blocker")],
+    });
+    const declaration = {
+      attackingPlayer: "player-1" as const,
+      defendingPlayer: "player-2" as const,
+      turnNumber: 3,
+      attackerIds: ["flying-attacker"],
+    };
+
+    document.body.innerHTML = blockerPromptMarkup(state, declaration, getPlayer(state, "player-2").monsters);
+    const options = [...document.querySelectorAll<HTMLOptionElement>('[data-block-attacker="flying-attacker"] option')]
+      .map((option) => option.value);
+
+    expect(options).toContain("reach-blocker");
+    expect(options).toContain("flying-blocker");
+    expect(options).not.toContain("ground-blocker");
   });
 });
 
