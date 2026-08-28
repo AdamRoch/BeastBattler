@@ -29,6 +29,9 @@ export function boardZoneMarkup(
         : "";
       const sick = hasSummoningSickness(state, monster) ? " SICK" : "";
       const level = monster.card.level === 3 ? " ★3" : "";
+      const keyword = monster.card.keyword
+        ? ` ${monster.card.keyword.toUpperCase()}`
+        : "";
       return `
         <button
           class="board-card${selected}"
@@ -38,7 +41,7 @@ export function boardZoneMarkup(
         >
           <span>${monster.card.name}${level}</span>
           <strong>${monster.card.attack}/${monster.card.health - monster.damage}</strong>
-          <small>${sick || "READY"}</small>
+          <small>${sick || "READY"}${keyword}</small>
         </button>
       `;
     })

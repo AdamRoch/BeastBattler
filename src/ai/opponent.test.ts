@@ -231,6 +231,29 @@ describe("scripted AI combat", () => {
     expect(result.waitingFor).toBe("turn-complete");
   });
 
+  it("does not count ground creatures as blockers against Flying", () => {
+    const state = scriptedState({
+      phase: "combat",
+      aiMonsters: [basePermanent("volt-bat", "flying-attacker")],
+      humanMonsters: [basePermanent("ember-imp", "ground-blocker")],
+    });
+
+    expect(runAiTurn(state, AI).actions[0]).toEqual({
+      kind: "attack",
+      attackerIds: ["flying-attacker"],
+    });
+  });
+
+  it("counts Reach as a legal blocker against Flying", () => {
+    const state = scriptedState({
+      phase: "combat",
+      aiMonsters: [basePermanent("volt-bat", "flying-attacker")],
+      humanMonsters: [basePermanent("cinder-wall", "reach-blocker")],
+    });
+
+    expect(runAiTurn(state, AI).actions[0]).toEqual({ kind: "hold-attack" });
+  });
+
   it("pauses only an empty combat phase for controller presentation", () => {
     const state = scriptedState({
       phase: "combat",

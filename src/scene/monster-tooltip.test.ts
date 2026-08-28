@@ -61,6 +61,19 @@ describe("monster tooltip content", () => {
       "Slow: Cannot attack the turn it enters play.",
     );
   });
+
+  it("explains Flying on a base creature", () => {
+    const card: BaseMonsterCard = {
+      ...baseMonster("ember-imp"),
+      instanceId: "volt-bat-1",
+      name: "Volt Bat",
+      keyword: "flying",
+    };
+
+    expect(monsterTooltipContent(permanent(card), false).rules).toContain(
+      "Flying: Can be blocked only by Flying or Reach creatures.",
+    );
+  });
 });
 
 function baseMonster(id: "ember-imp"): (typeof BASE_MONSTERS)[number] {

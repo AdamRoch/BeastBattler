@@ -14,6 +14,8 @@ const UNIVERSAL_TRAMPLE_NOTE =
 const KEYWORD_NOTES = {
   burst: "Burst: On fusion or ★3 upgrade, deal 1 damage to the opponent.",
   slow: "Slow: Cannot attack the turn it enters play.",
+  flying: "Flying: Can be blocked only by Flying or Reach creatures.",
+  reach: "Reach: Can block Flying creatures.",
 } as const;
 
 export interface MonsterTooltipContent {
@@ -41,7 +43,7 @@ export function monsterTooltipContent(
   const elements = card.category === "base-monster"
     ? [card.element]
     : card.elements;
-  const keywordNote = card.category === "fusion-monster" && card.keyword
+  const keywordNote = card.keyword
     ? KEYWORD_NOTES[card.keyword]
     : null;
 

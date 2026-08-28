@@ -16,6 +16,7 @@ import {
   type SpellTarget,
 } from "../rules/core";
 import {
+  countLegalBlockers,
   declareAttackers,
   type AttackDeclaration,
 } from "../rules/combat";
@@ -430,7 +431,10 @@ function chooseAttackers(
         monster.card.keyword === "slow"
       ),
   );
-  const blockerCount = getPlayer(state, opponentOf(aiPlayer)).monsters.length;
+  const blockerCount = countLegalBlockers(
+    attackers,
+    getPlayer(state, opponentOf(aiPlayer)).monsters,
+  );
 
   return blockerCount < attackers.length
     ? attackers.map((monster) => monster.card.instanceId)

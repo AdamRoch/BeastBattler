@@ -19,6 +19,7 @@ describe("match stack event binding", () => {
         attack: 2,
         health: 1,
         level: 1,
+        keyword: null,
       },
     };
     const counter = counterspell("counter", "summon", "player-2");

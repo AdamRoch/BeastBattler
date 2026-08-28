@@ -37,6 +37,7 @@ function monster(
     attack: 2,
     health: 2,
     level: 1,
+    keyword: null,
   };
 }
 

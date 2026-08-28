@@ -32,6 +32,7 @@ import {
 } from "../rules/core";
 import {
   assignBlockers,
+  canBlock,
   declareAttackers,
   resolveCombat,
   type BlockAssignment,
@@ -202,12 +203,24 @@ function simulateFullMatch(
     }
 
     const defender = getPlayer(state, result.attackDeclaration.defendingPlayer);
-    const blocks = defender.monsters
-      .slice(0, result.attackDeclaration.attackerIds.length)
-      .map((blocker, index): BlockAssignment => ({
-        attackerId: result.attackDeclaration?.attackerIds[index] ?? "",
+    const attackers = getPlayer(
+      state,
+      result.attackDeclaration.attackingPlayer,
+    ).monsters.filter((monster) =>
+      result.attackDeclaration?.attackerIds.includes(monster.card.instanceId),
+    );
+    const availableBlockers = [...defender.monsters];
+    const blocks = attackers.flatMap((attacker): BlockAssignment[] => {
+      const blockerIndex = availableBlockers.findIndex((blocker) =>
+        canBlock(attacker, blocker),
+      );
+      if (blockerIndex === -1) return [];
+      const [blocker] = availableBlockers.splice(blockerIndex, 1);
+      return [{
+        attackerId: attacker.card.instanceId,
         blockerId: blocker.card.instanceId,
-      }));
+      }];
+    });
     const plan = assignBlockers(
       state,
       result.attackDeclaration.defendingPlayer,

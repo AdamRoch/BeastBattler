@@ -64,10 +64,18 @@ There is no second main phase.
 - Board limit: **3 monster slots per player**. Lands live in a separate zone.
 - Dead monsters (and any cards they absorbed) go to the discard pile permanently.
 
+#### 4.4.1 Base creature roles
+
+- **Flying** — A Flying attacker can be blocked only by a creature with Flying or Reach.
+- **Reach** — A creature with Reach can block a Flying attacker.
+- Flying and Reach do not change blocking against a non-Flying attacker.
+- These are base-creature roles. They do not transfer when creatures fuse or when a fusion upgrades. A fusion keeps only its own Burst or Slow keyword.
+
 ### 4.5 Combat
 
 - Attacker declares which of their monsters attack (any number, none sick).
 - Defender assigns blockers: **one blocker per attacker** (no gang-blocking). Summoning-sick monsters may block.
+- A Flying attacker can be blocked only by a Flying or Reach creature.
 - Damage resolution:
   - A blocked attacker deals its ATK to its blocker. **Universal trample:** any ATK in excess of the blocker's HP is dealt to the defending player. (E.g. 3 ATK blocked by 1 HP → 1 to blocker, 2 to player.)
   - The blocker deals its ATK back to the attacker.
@@ -91,6 +99,7 @@ There is no second main phase.
 
 #### 4.6.2 Keywords
 
+- **Flying** and **Reach** are base-creature roles defined in §4.4.1. They are never inherited by a fusion.
 - **Burst** — "When this monster is created by fusion or upgraded to ★3, deal 1 damage to the opponent." Appears on: Inferno Beast, Plasma Beast.
 - **Slow** — "This monster cannot attack the turn it enters play, even if created by fusion." Appears on: Tsunami Beast, Golem Beast.
 
@@ -122,11 +131,11 @@ Numbers are ATK/HP. All base monsters cost 1 of their element.
 
 | Element | Aggressive body | Defensive body |
 |---|---|---|
-| Fire | Ember Imp 2/1 | Cinder Wall 1/2 |
+| Fire | Ember Imp 2/1 | Cinder Wall 1/2, Reach |
 | Water | Tide Serpent 1/2 | Reef Guardian 1/3 |
-| Earth | Stone Bull 2/2 | Moss Tortoise 1/3 |
-| Air | Gale Hawk 2/1 | Cloud Sprite 1/2 |
-| Lightning | Spark Lynx 2/1 | Volt Bat 1/2 |
+| Earth | Stone Bull 2/2 | Moss Tortoise 1/3, Reach |
+| Air | Gale Hawk 2/1, Flying | Cloud Sprite 1/2 |
+| Lightning | Spark Lynx 2/1 | Volt Bat 1/2, Flying |
 
 ### 5.2 Fusion monsters (15)
 
@@ -167,6 +176,8 @@ Each deck is built around a **2-element pair** (10 possible archetypes: Fire/Wat
 - **4 spells** — 1× Bolt, 1× Destroy, 1× Draw, 1× Counterspell
 
 Both players pick an archetype at match start. Mirror matches are allowed.
+
+Every two-element archetype includes at least one Flying or Reach base creature. Water has neither role, but it has no mono-Water archetype.
 
 ### 7.2 Extra deck
 
