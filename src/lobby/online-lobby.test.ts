@@ -187,6 +187,22 @@ describe("mountOnlineLobby", () => {
     expect(root.innerHTML).toContain("Hosted by Ada");
   });
 
+  it("renders the same catalog-derived deck previews in online setup", () => {
+    const storage = new FakeStorage();
+    storage.setItem("beast-battler.display-name", "Ada");
+    const socket = new FakeSocket();
+    const root = mountLobby(storage, [], socket);
+
+    socket.open();
+    socket.receive({ type: "welcome", version: 1, reconnectToken: "token-1", displayName: "Ada" });
+    root.click("create");
+
+    expect(root.innerHTML).toContain('aria-describedby="deck-preview-fire-lightning"');
+    expect(root.innerHTML).toContain("20 CARDS");
+    expect(root.innerHTML).toContain("Flying attackers: Volt Bat.");
+    expect(root.innerHTML).toContain("Destroy any creature regardless of its health.");
+  });
+
   it("resumes identity with the stored reconnect token on a fresh lobby mount", () => {
     const storage = new FakeStorage();
     storage.setItem("beast-battler.display-name", "Ada");
