@@ -16,6 +16,7 @@ export interface ArenaZones {
   >;
   landRows: Record<PlayerSide, THREE.Group>;
   handAreas: Record<PlayerSide, THREE.Group>;
+  zoneLabels: Record<PlayerSide, THREE.Group>;
 }
 
 const PLAYER_COLOR = 0x2e9dcc;
@@ -92,6 +93,61 @@ function createMonsterMarker(name: string, color: number): THREE.Group {
   return marker;
 }
 
+function createZoneLabel(
+  side: PlayerSide,
+  direction: 1 | -1,
+  color: number,
+): THREE.Group {
+  const label = new THREE.Group();
+  label.name = `${side}-beast-zone-label`;
+  label.position.set(0, 0.038, direction * 2.42);
+  label.rotation.x = -Math.PI / 2;
+  label.userData.text = "BEAST ZONE";
+  label.userData.side = side;
+
+  if (
+    typeof document === "undefined" ||
+    (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom"))
+  ) {
+    return label;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 72;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return label;
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.font = "900 42px Arial Narrow, Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+  context.shadowColor = context.fillStyle;
+  context.shadowBlur = 14;
+  context.fillText("BEAST ZONE", canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.6, 0.64),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  plane.name = `${side}-beast-zone-label-surface`;
+  plane.position.z = 0.006;
+  label.add(plane);
+  return label;
+}
+
 function createSideZones(
   side: PlayerSide,
   direction: 1 | -1,
@@ -134,12 +190,16 @@ export function createArenaZones(): ArenaZones {
 
   const player = createSideZones("player", 1, PLAYER_COLOR);
   const opponent = createSideZones("opponent", -1, OPPONENT_COLOR);
+  const playerLabel = createZoneLabel("player", 1, PLAYER_COLOR);
+  const opponentLabel = createZoneLabel("opponent", -1, OPPONENT_COLOR);
 
   group.add(
     ...player.monsterSlots,
+    playerLabel,
     player.landRow,
     player.handArea,
     ...opponent.monsterSlots,
+    opponentLabel,
     opponent.landRow,
     opponent.handArea,
   );
@@ -157,6 +217,10 @@ export function createArenaZones(): ArenaZones {
     handAreas: {
       player: player.handArea,
       opponent: opponent.handArea,
+    },
+    zoneLabels: {
+      player: playerLabel,
+      opponent: opponentLabel,
     },
   };
 }

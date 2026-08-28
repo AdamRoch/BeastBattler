@@ -5,7 +5,7 @@ import { createArenaScene } from "./arena";
 
 describe("createArenaScene", () => {
   it("creates the dark arena placeholder with a fixed camera and floor grid", () => {
-    const { scene, camera, floorGrid } = createArenaScene(16 / 9);
+    const { scene, camera, floorGrid, zones } = createArenaScene(16 / 9);
 
     expect(scene.background).toBeInstanceOf(THREE.Color);
     expect((scene.background as THREE.Color).getHex()).toBe(0x05070d);
@@ -13,6 +13,21 @@ describe("createArenaScene", () => {
     expect(camera.position.toArray()).toEqual([7, 7, 9]);
     expect(scene.children).toContain(floorGrid);
     expect((floorGrid.material as THREE.Material).opacity).toBe(0.35);
+    expect(zones.zoneLabels.player.name).toBe("player-beast-zone-label");
+    expect(zones.zoneLabels.player.userData).toMatchObject({
+      text: "BEAST ZONE",
+      side: "player",
+    });
+    expect(zones.zoneLabels.player.position.z).toBeGreaterThan(
+      zones.monsterSlots.player[0].position.z,
+    );
+    expect(zones.zoneLabels.opponent.userData).toMatchObject({
+      text: "BEAST ZONE",
+      side: "opponent",
+    });
+    expect(zones.zoneLabels.opponent.position.z).toBeLessThan(
+      zones.monsterSlots.opponent[0].position.z,
+    );
   });
 
   it("stages a fusion result while keeping both sources available to animate", () => {
