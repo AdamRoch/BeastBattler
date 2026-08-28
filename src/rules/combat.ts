@@ -44,6 +44,10 @@ export function canBlock(
   attacker: MonsterPermanent,
   blocker: MonsterPermanent,
 ): boolean {
+  if (blocker.damage >= blocker.card.health) {
+    return false;
+  }
+
   return (
     attacker.card.keyword !== "flying" ||
     blocker.card.keyword === "flying" ||
@@ -284,6 +288,9 @@ function validateBlocks(
       "attacker",
     );
     const blocker = findMonster(defendingPlayer, block.blockerId, "blocker");
+    if (blocker.damage >= blocker.card.health) {
+      throw new RulesError(`${blocker.card.name} is defeated and cannot block`);
+    }
     if (!canBlock(attacker, blocker)) {
       throw new RulesError(
         `${blocker.card.name} cannot block a Flying attacker`,

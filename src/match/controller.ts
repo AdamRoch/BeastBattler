@@ -443,7 +443,7 @@ export function mountMatch(
       ${!handIsPrivate && !interactionLocked && upgradeOptions.length > 0 ? upgradePrompt(upgradeOptions) : ""}
       ${!handIsPrivate && !interactionLocked && pendingTarget ? targetingPrompt(pendingTarget) : ""}
       ${!handIsPrivate && !interactionLocked && state.responsePlayer === localId ? responsePrompt(state) : ""}
-      ${!handIsPrivate && !interactionLocked && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack, local.monsters) : ""}
+      ${!handIsPrivate && !interactionLocked && pendingAttack && pendingAttack.defendingPlayer === localId ? blockerPrompt(pendingAttack) : ""}
       ${!handIsPrivate && !interactionLocked && state.result && !options.onComplete ? resultPrompt(state) : ""}
       ${combatPresentationBeat ? combatPresentationMarkup(combatPresentationBeat) : ""}
       ${summonTipVisible ? '<aside class="summon-tip" data-testid="summon-tip" role="status">Lv1 creatures can\'t attack on their first turn.</aside>' : ""}
@@ -925,9 +925,8 @@ export function mountMatch(
 
   function blockerPrompt(
     declaration: AttackDeclaration,
-    blockers: readonly MonsterPermanent[],
   ): string {
-    return blockerPromptMarkup(state, declaration, blockers);
+    return blockerPromptMarkup(state, declaration);
   }
 
   function resultPrompt(current: MatchState): string {
@@ -1505,7 +1504,9 @@ export function mountMatch(
     for (const entry of nextMonsters) {
       const id = entry.monster.card.instanceId;
       const summoningSick = hasSummoningSickness(after, entry.monster);
-      if (sceneIds.has(id)) {
+      const existingObject = arena.getMonster(id);
+      if (sceneIds.has(id) && existingObject) {
+        existingObject.visible = true;
         arena.setMonsterSummoningSickness(id, summoningSick);
         continue;
       }
@@ -2600,11 +2601,11 @@ export function responseWindowMessage(
 export function blockerPromptMarkup(
   state: MatchState,
   declaration: AttackDeclaration,
-  blockers: readonly MonsterPermanent[],
 ): string {
   const attackers = getPlayer(state, declaration.attackingPlayer).monsters.filter((monster) =>
     declaration.attackerIds.includes(monster.card.instanceId),
   );
+  const blockers = getPlayer(state, declaration.defendingPlayer).monsters;
   return `
     <div class="decision-backdrop">
       <section class="decision-panel blocker-panel" data-testid="blocker-prompt">

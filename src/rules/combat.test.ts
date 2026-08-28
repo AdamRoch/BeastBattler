@@ -85,6 +85,28 @@ describe("blocker assignments", () => {
     ).toEqual([block(attacker, sickBlocker)]);
   });
 
+  it("rejects defeated and missing blockers", () => {
+    const attacker = permanent("stone-bull", "attacker");
+    const liveBlocker = permanent("reef-guardian", "live-blocker");
+    const defeatedBlocker = {
+      ...permanent("cinder-wall", "defeated-blocker"),
+      damage: 4,
+    };
+    const state = combatState([attacker], [liveBlocker, defeatedBlocker]);
+    const declaration = declareAttackers(state, "player-1", [
+      attacker.card.instanceId,
+    ]);
+
+    expect(canBlock(attacker, defeatedBlocker)).toBe(false);
+    expect(() => assignBlockers(state, "player-2", declaration, [
+      block(attacker, defeatedBlocker),
+    ])).toThrow("is defeated and cannot block");
+    expect(() => assignBlockers(state, "player-2", declaration, [{
+      attackerId: attacker.card.instanceId,
+      blockerId: "missing-blocker",
+    }])).toThrow("is not a valid blocker");
+  });
+
   it("enforces one blocker per attacker and one attacker per blocker", () => {
     const firstAttacker = permanent("stone-bull", "attacker-1");
     const secondAttacker = permanent("ember-imp", "attacker-2");

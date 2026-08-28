@@ -237,6 +237,29 @@ describe("authoritative scene reconciliation", () => {
 
     controller.dispose();
   });
+
+  it("restores an authoritative beast if a stale animation hid its model", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const arena = createArenaScene(16 / 9);
+    const live = authoritativeMossState();
+    const adapter = new TestOnlineAdapter(live);
+    const controller = mountMatch(root, arena, {
+      mode: "online",
+      online: adapter,
+      playerOneArchetype: "fire-earth",
+      playerTwoArchetype: "earth-lightning",
+    });
+
+    const moss = arena.getMonster("authoritative-moss");
+    if (!moss) throw new Error("Missing authoritative Moss Tortoise model");
+    moss.visible = false;
+
+    adapter.publish({ state: live });
+
+    expect(arena.getMonster("authoritative-moss")?.visible).toBe(true);
+    controller.dispose();
+  });
 });
 
 describe("hand-card keywords", () => {
@@ -277,13 +300,48 @@ describe("blocker selection guidance", () => {
       attackerIds: ["flying-attacker"],
     };
 
-    document.body.innerHTML = blockerPromptMarkup(state, declaration, getPlayer(state, "player-2").monsters);
+    document.body.innerHTML = blockerPromptMarkup(state, declaration);
     const options = [...document.querySelectorAll<HTMLOptionElement>('[data-block-attacker="flying-attacker"] option')]
       .map((option) => option.value);
 
     expect(options).toContain("reach-blocker");
     expect(options).toContain("flying-blocker");
     expect(options).not.toContain("ground-blocker");
+  });
+
+  it("omits a defeated beast from the authoritative defender state", () => {
+    const deck = assembleDeck("fire-water");
+    const attacker = deck.find((card): card is BaseMonsterCard =>
+      card.kind === "monster" && card.category === "base-monster" && card.id === "ember-imp");
+    const blocker = deck.find((card): card is BaseMonsterCard =>
+      card.kind === "monster" && card.category === "base-monster" && card.id === "tide-serpent");
+    if (!attacker || !blocker) throw new Error("Missing defeated blocker fixtures");
+
+    let state = createMatch({ playerOneDeck: deck, playerTwoDeck: deck });
+    state = { ...state, activePlayer: "player-1", phase: "combat", turnNumber: 3 };
+    state = withPlayer(state, "player-1", {
+      monsters: [permanent(attacker, "ground-attacker")],
+    });
+    state = withPlayer(state, "player-2", {
+      monsters: [
+        permanent(blocker, "live-blocker"),
+        { ...permanent(blocker, "defeated-blocker"), damage: blocker.health },
+      ],
+    });
+    const declaration = {
+      attackingPlayer: "player-1" as const,
+      defendingPlayer: "player-2" as const,
+      turnNumber: 3,
+      attackerIds: ["ground-attacker"],
+    };
+
+    document.body.innerHTML = blockerPromptMarkup(state, declaration);
+    const options = [...document.querySelectorAll<HTMLOptionElement>(
+      '[data-block-attacker="ground-attacker"] option',
+    )].map((option) => option.value);
+
+    expect(options).toContain("live-blocker");
+    expect(options).not.toContain("defeated-blocker");
   });
 });
 
