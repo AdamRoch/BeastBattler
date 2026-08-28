@@ -250,10 +250,12 @@ Required match guidance:
   action area states what the current phase allows and names the control that
   advances or ends it. This is persistent guidance, not a toast that vanishes
   before the player finds the button.
-- **Lands are counted and explained.** Each board shows total lands and ready
-  lands in plain text as well as elemental pips. During main phase, the player
-  is reminded that they may play one land each turn and should usually do so
-  before moving to combat. Ready and spent lands must be visually distinct.
+- **Lands are visible, counted, and explained.** Every land in play appears as
+  an individual, full card-shaped permanent on the table nearest its player.
+  Its element and ready or used state are unmistakable, and each side also
+  states its total lands and ready lands in plain text. During main phase, the
+  player is reminded that they may play one land each turn and should usually
+  do so before moving to combat.
 - **The opening hand explains the free mulligan.** The prompt states that all
   four cards may be replaced once, with no penalty.
 - **Contextual decision prompts explain consequences.** Fusion says that both

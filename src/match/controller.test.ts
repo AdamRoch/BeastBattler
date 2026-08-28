@@ -364,7 +364,7 @@ describe("contextual tutorials", () => {
     controller.dispose();
   });
 
-  it("keeps the next-phase instruction visible and labels land totals", () => {
+  it("keeps phase guidance visible and renders each land as a ready or used card", () => {
     const root = document.createElement("div");
     document.body.append(root);
     const deck = assembleDeck("fire-water");
@@ -380,7 +380,7 @@ describe("contextual tutorials", () => {
         hand: [{ ...land, instanceId: "land-in-hand" }],
         lands: [
           readyLand(land, "ready-land-1"),
-          readyLand(land, "ready-land-2"),
+          { ...readyLand(land, "used-land-1"), ready: false },
         ],
         landPlayedThisTurn: false,
         mulliganDecision: "kept",
@@ -394,9 +394,17 @@ describe("contextual tutorials", () => {
     expect(root.querySelector("[data-testid=phase-guidance]")?.textContent).toContain(
       "play one land each turn",
     );
-    expect(root.querySelector(".board-player .land-count")?.textContent).toBe(
-      "2 LANDS · 2 READY",
-    );
+    const tableau = root.querySelector(".land-tableau-player");
+    expect(tableau?.getAttribute("aria-label")).toBe("Your lands");
+    expect(tableau?.querySelector(".land-count")?.textContent).toBe("2 LANDS");
+    expect(tableau?.querySelector(".land-ready-count")?.textContent).toBe("1 READY");
+    expect(tableau?.querySelectorAll(".land-permanent")).toHaveLength(2);
+    expect(tableau?.querySelectorAll(".land-permanent.is-ready")).toHaveLength(1);
+    expect(tableau?.querySelectorAll(".land-permanent.is-used")).toHaveLength(1);
+    expect(tableau?.querySelector('[data-land-id="ready-land-1"] img')?.getAttribute("src"))
+      .toContain("data:image/svg+xml");
+    expect(tableau?.querySelector('[data-land-id="used-land-1"]')?.getAttribute("aria-label"))
+      .toBe("Fire Land, used");
     controller.dispose();
   });
 });

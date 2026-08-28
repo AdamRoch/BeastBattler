@@ -672,7 +672,7 @@ canvas {
 }
 
 .board-opponent { top: 108px; justify-content: center; }
-.board-player { bottom: 218px; justify-content: center; }
+.board-player { bottom: 305px; justify-content: center; }
 
 .board-card,
 .empty-board,
@@ -734,38 +734,125 @@ canvas {
   box-shadow: 0 0 18px rgba(58, 197, 239, 0.12);
 }
 
-.land-readout {
+.land-tableau {
   position: absolute;
-  top: 43px;
   left: 50%;
+  display: grid;
+  z-index: 2;
+  width: min(46vw, 620px);
+  justify-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.land-tableau-opponent { top: 158px; }
+.land-tableau-player { bottom: 174px; }
+
+.land-tableau-heading {
   display: flex;
   align-items: center;
-  gap: 5px;
-  transform: translateX(-50%);
-  color: #627c8e;
+  gap: 9px;
+  margin-bottom: 6px;
+  color: #6f8b9d;
   font-size: 8px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.land-tableau-heading .land-count { color: #daf7ff; font-size: 9px; }
+.land-tableau-heading .land-ready-count { color: #77dff7; font-weight: 850; }
+.land-tableau-heading > span:last-child { color: #5d7889; }
+
+.land-card-row {
+  display: flex;
+  min-height: 88px;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+}
+
+.land-permanent {
+  position: relative;
+  width: 58px;
+  aspect-ratio: 176 / 246;
+  overflow: hidden;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: #050a11;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.58), 0 0 12px color-mix(in srgb, currentColor 25%, transparent);
+  transition: filter 160ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.land-permanent img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.land-element,
+.land-state {
+  position: absolute;
+  right: 4px;
+  left: 4px;
+  overflow: hidden;
+  padding: 2px 3px;
+  border-radius: 2px;
+  background: rgba(2, 7, 12, 0.82);
+  color: #effcff;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.land-readout span { margin-left: 4px; }
+.land-element { bottom: 15px; }
+.land-state { bottom: 4px; color: currentColor; }
 
-.land-pip {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  opacity: 0.25;
+.land-permanent.is-ready {
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.58), 0 0 16px currentColor;
 }
 
-.land-pip.is-ready { background: currentColor; box-shadow: 0 0 9px currentColor; opacity: 0.95; }
+.land-permanent.is-used {
+  filter: grayscale(0.76) brightness(0.48);
+  opacity: 0.72;
+  transform: translateY(7px) rotate(7deg);
+}
+
+.land-permanent.is-used::after {
+  position: absolute;
+  inset: 28px -9px auto;
+  padding: 3px;
+  background: rgba(2, 5, 9, 0.9);
+  color: #d7e1e6;
+  content: "USED";
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+  text-align: center;
+  transform: rotate(-24deg);
+}
+
+.land-tableau-empty {
+  display: grid;
+  min-width: 132px;
+  min-height: 76px;
+  place-items: center;
+  border: 1px dashed rgba(116, 194, 224, 0.2);
+  border-radius: 5px;
+  color: #40596a;
+  font-size: 7px;
+  letter-spacing: 0.14em;
+}
+
 .element-fire { color: #ff5d3d; }
 .element-water { color: #31baff; }
 .element-earth { color: #cf995c; }
 .element-air { color: #93ebd5; }
 .element-lightning { color: #bd9aff; }
-.no-lands { color: #4d6575; }
 
 .summon-tip {
   position: absolute;
@@ -1257,6 +1344,9 @@ canvas {
   .extra-deck-panel { width: 170px; }
   .board-readout { width: 48vw; }
   .board-card { min-width: 96px; }
+  .land-tableau { width: 52vw; }
+  .land-permanent { width: 52px; }
+  .land-card-row { gap: 5px; }
   .action-dock { grid-template-columns: minmax(130px, 190px) auto auto; }
   .hand-card { width: 108px; height: 151px; }
 }
