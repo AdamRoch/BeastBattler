@@ -4,3 +4,4 @@ dist/
 .worktrees/
 tsconfig.tsbuildinfo
 .DS_Store
+/video.mov
