@@ -108,8 +108,8 @@ import {
 import {
   combatAnnouncement,
   createAnnouncementDeduper,
+  fallenBeastIds,
   fusionCompletionAnnouncement,
-  hasBeastFallen,
   resultAnnouncement,
 } from "./announcer-events";
 import type { AnnouncerLine } from "../sfx/announcer";
@@ -505,14 +505,9 @@ export function mountMatch(
         announce(`fusion-start:${item.stackId}`, "fusion-initiated");
       }
     }
-    if (hasBeastFallen(before, after)) {
-      const afterIds = new Set(after.players.flatMap((player) =>
-        player.monsters.map((monster) => monster.card.instanceId),
-      ));
-      const fallenIds = before.players.flatMap((player) =>
-        player.monsters.map((monster) => monster.card.instanceId),
-      ).filter((id) => !afterIds.has(id));
-      announce(`beast-fallen:${fallenIds.sort().join(",")}`, "a-beast-has-fallen");
+    const fallenIds = fallenBeastIds(before, after);
+    if (fallenIds.length > 0) {
+      announce(`beast-fallen:${[...fallenIds].sort().join(",")}`, "a-beast-has-fallen");
     }
   }
 
