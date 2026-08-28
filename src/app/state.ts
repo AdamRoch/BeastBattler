@@ -1,5 +1,5 @@
 import type { ArchetypeId } from "../cards/catalog";
-import type { MatchResult } from "../rules/core";
+import type { MatchResult, PlayerId } from "../rules/core";
 
 export type GameMode = "ai" | "hotseat";
 
@@ -10,6 +10,7 @@ export type AppScreen =
   | "deck-select"
   | "deck-handoff"
   | "match"
+  | "result-handoff"
   | "result";
 
 export interface AppState {
@@ -19,6 +20,7 @@ export interface AppState {
   readonly playerOneArchetype: ArchetypeId | null;
   readonly playerTwoArchetype: ArchetypeId | null;
   readonly result: MatchResult | null;
+  readonly resultViewingPlayer: PlayerId | null;
 }
 
 const DEFAULT_AI_ARCHETYPE: ArchetypeId = "earth-lightning";
@@ -31,6 +33,7 @@ export function createInitialAppState(): AppState {
     playerOneArchetype: null,
     playerTwoArchetype: null,
     result: null,
+    resultViewingPlayer: null,
   };
 }
 
@@ -43,6 +46,7 @@ export function showModeSelect(state: AppState): AppState {
     playerOneArchetype: null,
     playerTwoArchetype: null,
     result: null,
+    resultViewingPlayer: null,
   };
 }
 
@@ -55,6 +59,7 @@ export function selectMode(state: AppState, mode: GameMode): AppState {
     playerOneArchetype: null,
     playerTwoArchetype: null,
     result: null,
+    resultViewingPlayer: null,
   };
 }
 
@@ -67,6 +72,7 @@ export function showOnlineLobby(state: AppState): AppState {
     playerOneArchetype: null,
     playerTwoArchetype: null,
     result: null,
+    resultViewingPlayer: null,
   };
 }
 
@@ -124,12 +130,46 @@ export function showResult(
   result: MatchResult,
 ): AppState {
   assertConfiguredMatch(state);
-  return { ...state, screen: "result", result };
+  const resultViewingPlayer = state.mode === "hotseat" ? result.winner : "player-1";
+  return {
+    ...state,
+    screen: state.mode === "hotseat" ? "result-handoff" : "result",
+    result,
+    resultViewingPlayer,
+  };
+}
+
+export function continueHotseatResultHandoff(state: AppState): AppState {
+  if (
+    state.screen !== "result-handoff" ||
+    state.mode !== "hotseat" ||
+    !state.result ||
+    !state.resultViewingPlayer
+  ) {
+    throw new Error("There is no hotseat result handoff to continue");
+  }
+  return { ...state, screen: "result" };
+}
+
+export function handoffHotseatResult(state: AppState): AppState {
+  if (
+    state.screen !== "result" ||
+    state.mode !== "hotseat" ||
+    !state.result ||
+    !state.resultViewingPlayer
+  ) {
+    throw new Error("There is no hotseat result to hand off");
+  }
+  return {
+    ...state,
+    screen: "result-handoff",
+    resultViewingPlayer: state.result.loser,
+  };
 }
 
 export function rematch(state: AppState): AppState {
   assertConfiguredMatch(state);
-  return { ...state, screen: "match", result: null };
+  return { ...state, screen: "match", result: null, resultViewingPlayer: null };
 }
 
 export function returnToTitle(): AppState {

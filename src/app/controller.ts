@@ -18,7 +18,9 @@ import type { MatchResult } from "../rules/core";
 import type { SfxEngine } from "../sfx";
 import {
   continueHotseatDeckSelection,
+  continueHotseatResultHandoff,
   createInitialAppState,
+  handoffHotseatResult,
   isConfiguredMatch,
   rematch,
   returnToTitle,
@@ -119,6 +121,9 @@ export function mountApp(
       case "deck-handoff":
         screens.innerHTML = deckHandoffScreen();
         return;
+      case "result-handoff":
+        screens.innerHTML = resultHandoffScreen(state);
+        return;
       case "result":
         screens.innerHTML = resultScreen(state);
         return;
@@ -180,6 +185,12 @@ export function mountApp(
       }
       case "continue-handoff":
         state = continueHotseatDeckSelection(state);
+        break;
+      case "continue-result-handoff":
+        state = continueHotseatResultHandoff(state);
+        break;
+      case "handoff-result":
+        state = handoffHotseatResult(state);
         break;
       case "rematch":
         disposeMatch();
@@ -334,28 +345,46 @@ function deckHandoffScreen(): string {
   `;
 }
 
-function resultScreen(state: AppState): string {
-  if (!state.result || !state.mode) {
+export function resultScreen(state: AppState): string {
+  if (!state.result || !state.mode || !state.resultViewingPlayer) {
     throw new Error("A result screen requires a completed match");
   }
   const playerOneWon = state.result.winner === "player-1";
   const heading = state.mode === "ai"
     ? playerOneWon ? "VICTORY" : "DEFEAT"
     : `PLAYER ${playerOneWon ? 1 : 2} WINS`;
-  const message = resultMessageFor(state.result.winner, "player-1");
-  const reason = state.result.reason === "deck-out"
-    ? "The opposing deck ran dry."
-    : "The opposing life counter reached zero.";
+  const message = resultMessageFor(state.result, state.resultViewingPlayer);
+  const handoff = state.mode === "hotseat" &&
+    state.resultViewingPlayer === state.result.winner
+    ? `<button class="flow-secondary" data-screen-action="handoff-result">PASS TO PLAYER ${state.result.loser === "player-1" ? 1 : 2}</button>`
+    : "";
   return `
     <main class="flow-screen result-screen" data-testid="result-screen">
       <span class="screen-kicker">MATCH COMPLETE</span>
       <h1>${heading}</h1>
       ${resultMessageMarkup(message)}
-      <p class="result-reason">${reason}</p>
+      <p class="result-reason">${message.reason}</p>
       <div class="result-actions">
+        ${handoff}
         <button class="flow-primary" data-screen-action="rematch">REMATCH</button>
         <button class="flow-secondary" data-screen-action="menu">MAIN MENU</button>
       </div>
+    </main>
+  `;
+}
+
+export function resultHandoffScreen(state: AppState): string {
+  if (!state.result || !state.resultViewingPlayer) {
+    throw new Error("A result handoff requires a completed match");
+  }
+  const playerNumber = state.resultViewingPlayer === "player-1" ? 1 : 2;
+  return `
+    <main class="flow-screen handoff-screen" data-testid="result-handoff-screen">
+      <span class="handoff-lock" aria-hidden="true">◆</span>
+      <span class="screen-kicker">MATCH COMPLETE</span>
+      <h1>Pass the device</h1>
+      <p>Player ${playerNumber}, press ready when the other player can no longer see the screen.</p>
+      <button class="flow-primary" data-screen-action="continue-result-handoff">I'M PLAYER ${playerNumber}</button>
     </main>
   `;
 }
