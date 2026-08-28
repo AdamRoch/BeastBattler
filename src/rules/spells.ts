@@ -58,7 +58,7 @@ export function castSpell(
     throw new RulesError("Counterspell can only be cast in a response window");
   }
 
-  validateSpellTarget(state, spell, target);
+  validateSpellTarget(state, playerId, spell, target);
   const pendingSpell: PendingSpell = {
     stackId: stackId(state, spell.instanceId),
     kind: "spell",
@@ -303,13 +303,18 @@ function destroyMonster(
 
 function validateSpellTarget(
   state: MatchState,
+  controller: PlayerId,
   spell: SpellCard,
   target: SpellTarget | null,
 ): void {
+  const opposingPlayer = opponentOf(controller);
   switch (spell.id) {
     case "bolt":
       if (!target) {
-        throw new RulesError("Bolt requires a player or monster target");
+        throw new RulesError("Bolt requires an opposing player or beast target");
+      }
+      if (target.playerId !== opposingPlayer) {
+        throw new RulesError("Bolt can only target the opponent or an opposing beast");
       }
       if (target.kind === "monster") {
         findMonster(getPlayer(state, target.playerId), target.monsterId);
@@ -317,7 +322,10 @@ function validateSpellTarget(
       return;
     case "destroy":
       if (!target || target.kind !== "monster") {
-        throw new RulesError("Destroy requires a monster target");
+        throw new RulesError("Destroy requires an opposing beast target");
+      }
+      if (target.playerId !== opposingPlayer) {
+        throw new RulesError("Destroy can only target an opposing beast");
       }
       findMonster(getPlayer(state, target.playerId), target.monsterId);
       return;

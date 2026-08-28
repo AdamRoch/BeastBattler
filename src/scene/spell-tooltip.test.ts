@@ -11,7 +11,7 @@ describe("spell tooltip content", () => {
     expect(spellTooltipContent("destroy")).toEqual({
       name: "Destroy",
       timingLabel: "SORCERY · COST 1",
-      rulesText: "Destroy any creature regardless of its health.",
+      rulesText: "Destroy an opposing beast regardless of its health.",
     });
   });
 
@@ -32,7 +32,7 @@ describe("spell tooltip content", () => {
     const tooltipElement = root.querySelector<HTMLElement>("[data-testid=spell-tooltip]");
     expect(tooltipElement?.hidden).toBe(false);
     expect(tooltipElement?.textContent).toContain(
-      "Deal 2 damage to any monster or player.",
+      "Deal 2 damage to the opposing player or one of their beasts.",
     );
 
     tooltip.dispose();

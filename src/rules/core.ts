@@ -55,8 +55,8 @@ export interface SpellCard extends CardBase {
 }
 
 export type SpellEffect =
-  | Readonly<{ kind: "damage"; amount: 2; target: "any" }>
-  | Readonly<{ kind: "destroy"; target: "monster" }>
+  | Readonly<{ kind: "damage"; amount: 2; target: "opponent" }>
+  | Readonly<{ kind: "destroy"; target: "opponent-monster" }>
   | Readonly<{ kind: "draw"; count: 2 }>
   | Readonly<{
       kind: "counter";

@@ -124,8 +124,8 @@ export const SPELLS = [
     name: "Bolt",
     cost: 1,
     timing: "sorcery",
-    effect: { kind: "damage", amount: 2, target: "any" },
-    rulesText: "Deal 2 damage to any monster or player.",
+    effect: { kind: "damage", amount: 2, target: "opponent" },
+    rulesText: "Deal 2 damage to the opposing player or one of their beasts.",
   },
   {
     id: "destroy",
@@ -134,8 +134,8 @@ export const SPELLS = [
     name: "Destroy",
     cost: 1,
     timing: "sorcery",
-    effect: { kind: "destroy", target: "monster" },
-    rulesText: "Destroy any creature regardless of its health.",
+    effect: { kind: "destroy", target: "opponent-monster" },
+    rulesText: "Destroy an opposing beast regardless of its health.",
   },
   {
     id: "draw",

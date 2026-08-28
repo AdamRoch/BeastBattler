@@ -109,6 +109,47 @@ describe("sorcery spells", () => {
     expect(getPlayer(state, "player-2").discardPile).toContain(target.card);
   });
 
+  it.each(["bolt", "destroy"] as const)(
+    "rejects a friendly beast as a %s target",
+    (spellId) => {
+      const card = spell(spellId, `${spellId}-card`);
+      const friendly = permanent("ember-imp", "friendly-beast");
+      const state = mainPhaseState({
+        playerOneHand: [card],
+        playerOneLands: [readyLand("fire", "p1-fire")],
+        playerOneMonsters: [friendly],
+      });
+
+      expect(() => castSpell(
+        state,
+        "player-1",
+        card.instanceId,
+        {
+          kind: "monster",
+          playerId: "player-1",
+          monsterId: friendly.card.instanceId,
+        },
+        "fire",
+      )).toThrow("can only target");
+    },
+  );
+
+  it("rejects the caster as a Bolt target", () => {
+    const bolt = spell("bolt", "bolt-card");
+    const state = mainPhaseState({
+      playerOneHand: [bolt],
+      playerOneLands: [readyLand("fire", "p1-fire")],
+    });
+
+    expect(() => castSpell(
+      state,
+      "player-1",
+      bolt.instanceId,
+      { kind: "player", playerId: "player-1" },
+      "fire",
+    )).toThrow("can only target the opponent");
+  });
+
   it("draws two cards for Draw", () => {
     const draw = spell("draw", "draw-card");
     let state = mainPhaseState({
