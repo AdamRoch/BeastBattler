@@ -102,7 +102,7 @@ const DEFAULT_SETTINGS: SfxSettings = {
   muted: false,
   volume: 1,
   musicVolume: 1,
-  voiceVolume: 1,
+  voiceVolume: 0.5,
   effectsVolume: 1,
 };
 const BACKGROUND_MUSIC_SOURCE = "/audio/background-music.mp3";
@@ -128,10 +128,10 @@ export function readSfxSettings(
     const parsed = JSON.parse(value) as Partial<SfxSettings>;
     return {
       muted: typeof parsed.muted === "boolean" ? parsed.muted : false,
-      volume: normalizeVolume(parsed.volume),
-      musicVolume: normalizeVolume(parsed.musicVolume),
-      voiceVolume: normalizeVolume(parsed.voiceVolume),
-      effectsVolume: normalizeVolume(parsed.effectsVolume),
+      volume: normalizeVolume(parsed.volume, DEFAULT_SETTINGS.volume),
+      musicVolume: normalizeVolume(parsed.musicVolume, DEFAULT_SETTINGS.musicVolume),
+      voiceVolume: normalizeVolume(parsed.voiceVolume, DEFAULT_SETTINGS.voiceVolume),
+      effectsVolume: normalizeVolume(parsed.effectsVolume, DEFAULT_SETTINGS.effectsVolume),
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -875,10 +875,10 @@ function playChord(
   );
 }
 
-function normalizeVolume(value: unknown): number {
+function normalizeVolume(value: unknown, fallback = DEFAULT_SETTINGS.volume): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(1, Math.max(0, value))
-    : DEFAULT_SETTINGS.volume;
+    : fallback;
 }
 
 function ambientLevel(monsterCount: number): number {
