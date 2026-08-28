@@ -70,7 +70,18 @@ describe("RoomManager lobby protocol", () => {
     manager.receive(secondToken, { type: "lobby.join", matchId: listing.matches[0].id, archetype: "earth-air" });
 
     expect(manager.openMatches()).toEqual([]);
-    expect(first.last("match.started")).toMatchObject({ playerId: "player-1", opponentName: "Lin" });
+    expect(first.last("match.started")).toMatchObject({
+      playerId: "player-1",
+      opponentName: "Lin",
+      playerArchetype: "fire-water",
+      opponentArchetype: "earth-air",
+    });
+    expect(second.last("match.started")).toMatchObject({
+      playerId: "player-2",
+      opponentName: "Ada",
+      playerArchetype: "earth-air",
+      opponentArchetype: "fire-water",
+    });
     expect(second.last("match.state").state.you.id).toBe("player-2");
     expect(first.last("match.state").state.opponent.handCount).toBe(4);
   });

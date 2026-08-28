@@ -104,7 +104,7 @@ export function startOnlineMatch(
   const match = mountMatch(root, deps.arena, {
     mode: "online",
     playerOneArchetype: session.playerArchetype,
-    playerTwoArchetype: session.playerArchetype,
+    playerTwoArchetype: session.opponentArchetype,
     sfx: deps.sfx,
     online: client,
   });

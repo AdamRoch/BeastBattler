@@ -71,6 +71,7 @@ function lobbySession(socket: TestSocket): OnlineMatchSession {
     playerId: "player-2",
     opponentName: "Lin",
     playerArchetype: "fire-water",
+    opponentArchetype: "earth-air",
   };
 }
 
@@ -269,7 +270,14 @@ describe("OnlineMatchClient", () => {
     client.requestRematch();
     expect(JSON.parse(socket.sent.at(-1) ?? "{}")).toMatchObject({ type: "match.rematch" });
 
-    socket.receive({ type: "match.started", matchId: "match-1", playerId: "player-2", opponentName: "Lin" });
+    socket.receive({
+      type: "match.started",
+      matchId: "match-1",
+      playerId: "player-2",
+      opponentName: "Lin",
+      playerArchetype: "fire-water",
+      opponentArchetype: "earth-air",
+    });
     socket.receive({ type: "match.state", matchId: "match-1", state: filteredState() });
     expect(updates).toContain("Matched with Lin.");
     expect(client.getState()?.players[0].id).toBe("player-1");
@@ -307,7 +315,14 @@ describe("OnlineMatchClient", () => {
     });
 
     replacement.receive({ type: "match.resumed", matchId: "match-1" });
-    replacement.receive({ type: "match.started", matchId: "match-1", playerId: "player-2", opponentName: "Lin" });
+    replacement.receive({
+      type: "match.started",
+      matchId: "match-1",
+      playerId: "player-2",
+      opponentName: "Lin",
+      playerArchetype: "fire-water",
+      opponentArchetype: "earth-air",
+    });
     replacement.receive({ type: "match.state", matchId: "match-1", state: filteredState() });
     expect(client.getState()?.players[0].id).toBe("player-1");
   });
@@ -363,6 +378,7 @@ function sessionFor(
     playerId,
     opponentName,
     playerArchetype: "fire-water",
+    opponentArchetype: "earth-air",
   };
 }
 

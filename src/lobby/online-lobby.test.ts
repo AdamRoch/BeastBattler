@@ -144,7 +144,14 @@ describe("mountOnlineLobby", () => {
     socket.receive({ type: "match.waiting", match: MATCH });
     expect(root.innerHTML).toContain('data-testid="online-waiting-screen"');
 
-    socket.receive({ type: "match.started", matchId: "match-1", playerId: "player-1", opponentName: "Lin" });
+    socket.receive({
+      type: "match.started",
+      matchId: "match-1",
+      playerId: "player-1",
+      opponentName: "Lin",
+      playerArchetype: "fire-water",
+      opponentArchetype: "earth-air",
+    });
 
     expect(sessions).toHaveLength(1);
     const session = sessions[0];
@@ -156,6 +163,7 @@ describe("mountOnlineLobby", () => {
       playerId: "player-1",
       opponentName: "Lin",
       playerArchetype: "fire-water",
+      opponentArchetype: "earth-air",
     });
 
     // The lobby detaches its listeners but leaves the socket open for the match.
