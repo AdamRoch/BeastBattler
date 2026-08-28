@@ -400,16 +400,28 @@ export function mountMatch(
           selectedAttackers,
           fusionPending: hasPendingFusion(AI),
         })}
-        <div class="land-readout">${landPips(playerTwo.lands)} ${landSummary(playerTwo.lands)} <span data-draw-hand="${AI}">${playerTwo.hand.length} cards</span></div>
       </section>
+
+      ${landTableau(
+        playerTwo.lands,
+        mode === "hotseat" ? "Player 2" : mode === "online" ? "Opponent" : "AI",
+        "opponent",
+        `<span data-draw-hand="${AI}">${playerTwo.hand.length} cards</span>`,
+      )}
 
       <section class="board-readout board-player" aria-label="Player 1 board">
         ${boardZoneMarkup(state, HUMAN, {
           selectedAttackers,
           fusionPending: hasPendingFusion(HUMAN),
         })}
-        <div class="land-readout">${landPips(playerOne.lands)} ${landSummary(playerOne.lands)} <span>${playerOne.deck.length} deck</span></div>
       </section>
+
+      ${landTableau(
+        playerOne.lands,
+        mode === "hotseat" ? "Player 1" : "Your",
+        "player",
+        `<span>${playerOne.deck.length} deck</span>`,
+      )}
 
       ${drawDeckAnchor(AI, playerTwo.deck.length)}
       ${drawDeckAnchor(HUMAN, playerOne.deck.length)}
@@ -2452,6 +2464,44 @@ export function mountMatch(
     return CARD_ART_IDS.includes(artId) ? art.render(artId) : landArt("water", card.name);
   }
 
+  function landTableau(
+    lands: MatchState["players"][number]["lands"],
+    ownerLabel: string,
+    side: "player" | "opponent",
+    auxiliaryMarkup: string,
+  ): string {
+    const ready = lands.filter((land) => land.ready).length;
+    const cards = lands.length === 0
+      ? `<div class="land-tableau-empty">NO LANDS IN PLAY</div>`
+      : lands.map((land) => {
+        const stateLabel = land.ready ? "ready" : "used";
+        return `
+          <article
+            class="land-permanent element-${land.card.element} is-${stateLabel}"
+            data-land-id="${land.card.instanceId}"
+            data-ready="${land.ready}"
+            aria-label="${land.card.name}, ${stateLabel}"
+            title="${land.card.name} · ${stateLabel.toUpperCase()}"
+          >
+            <img src="${cardArt(land.card)}" alt="" />
+            <span class="land-element">${land.card.element}</span>
+            <strong class="land-state">${stateLabel}</strong>
+          </article>
+        `;
+      }).join("");
+    const landLabel = lands.length === 1 ? "LAND" : "LANDS";
+    return `
+      <section class="land-tableau land-tableau-${side}" aria-label="${ownerLabel} lands">
+        <div class="land-tableau-heading">
+          <strong class="land-count">${lands.length} ${landLabel}</strong>
+          <span class="land-ready-count">${ready} READY</span>
+          ${auxiliaryMarkup}
+        </div>
+        <div class="land-card-row">${cards}</div>
+      </section>
+    `;
+  }
+
   function extraDeckCard(
     card: FusionMonsterCard,
     remaining: readonly FusionMonsterCard[],
@@ -2537,21 +2587,6 @@ function phaseLabel(state: MatchState): string {
     return "MULLIGAN";
   }
   return state.phase.toUpperCase();
-}
-
-function landPips(lands: MatchState["players"][number]["lands"]): string {
-  if (lands.length === 0) {
-    return "";
-  }
-  return lands
-    .map((land) => `<i class="land-pip element-${land.card.element}${land.ready ? " is-ready" : ""}" title="${land.card.name} ${land.ready ? "ready" : "spent"}"></i>`)
-    .join("");
-}
-
-function landSummary(lands: MatchState["players"][number]["lands"]): string {
-  const ready = lands.filter((land) => land.ready).length;
-  const landLabel = lands.length === 1 ? "LAND" : "LANDS";
-  return `<strong class="land-count">${lands.length} ${landLabel} · ${ready} READY</strong>`;
 }
 
 function landArt(element: CardElement, name: string): string {
