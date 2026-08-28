@@ -75,6 +75,27 @@ describe("toLocalMatchState", () => {
 });
 
 describe("OnlineMatchClient", () => {
+  it("accepts an authoritative automatic-draw snapshot that is already in main phase", () => {
+    const socket = new TestSocket();
+    socket.readyState = 1;
+    const client = new OnlineMatchClient(lobbySession(socket), {
+      arena: {} as never,
+      now: () => 1_000,
+      schedule: () => 1,
+      cancel: () => {},
+    });
+    client.connect();
+
+    socket.receive({
+      type: "match.state",
+      matchId: "match-1",
+      state: { ...filteredState(), phase: "main", turnNumber: 2 },
+    });
+
+    expect(client.getState()).toMatchObject({ phase: "main", turnNumber: 2 });
+    expect(socket.sent).toHaveLength(0);
+  });
+
   it("adopts the lobby socket without resending hello and maps server state", () => {
     const socket = new TestSocket();
     socket.readyState = 1;

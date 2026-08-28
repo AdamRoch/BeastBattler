@@ -283,7 +283,7 @@ function mainPhaseState(archetype: ArchetypeId): MatchState {
   });
   state = keepHand(state, "player-1");
   state = keepHand(state, "player-2");
-  return advancePhase(state);
+  return state;
 }
 
 function withPlayer(

@@ -142,6 +142,22 @@ describe("RoomManager reconnect handling", () => {
 });
 
 describe("RoomManager decision timers", () => {
+  it("publishes main phase after mulligans and never schedules a draw decision", () => {
+    const { manager } = managerWithClock();
+    const { first, firstToken, secondToken } = connectPair(manager);
+    manager.receive(firstToken, { type: "lobby.create", name: "Automatic", archetype: "fire-water" });
+    manager.receive(secondToken, { type: "lobby.join", matchId: manager.openMatches()[0].id, archetype: "earth-air" });
+
+    manager.receive(firstToken, { type: "match.intent", intent: { kind: "keep-hand" } });
+    manager.receive(secondToken, { type: "match.intent", intent: { kind: "keep-hand" } });
+
+    const state = first.last("match.state").state;
+    expect(state.phase).toBe("main");
+    expect(state.timers).toEqual([
+      expect.objectContaining({ playerId: "player-1", stage: "quiet" }),
+    ]);
+  });
+
   it("moves from quiet time to countdown and keeps a mulligan hand on expiry", () => {
     const { manager, fireLatest, setNow } = managerWithClock();
     const { first, second, firstToken, secondToken } = connectPair(manager);

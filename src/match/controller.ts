@@ -631,8 +631,6 @@ export function mountMatch(
         : "";
     }
     switch (state.phase) {
-      case "draw":
-        return phaseAdvanceButton("BEGIN MAIN PHASE");
       case "main":
         return phaseAdvanceButton("TO COMBAT");
       case "combat":
@@ -1164,7 +1162,7 @@ export function mountMatch(
     } else if (result.waitingFor === "opponent-response") {
       notice = "You have priority. Counter the pending action or pass.";
     } else if (result.waitingFor === "turn-complete") {
-      notice = "Your turn. Advance from draw to begin.";
+      notice = "Your turn. Main phase is ready.";
     } else {
       notice = aiActionSummary(result.actions);
     }
