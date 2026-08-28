@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 
-import { createArenaScene } from "./arena";
+import { createArenaScene, monsterFacingYaw } from "./arena";
 
 describe("createArenaScene", () => {
   it("creates the dark arena placeholder with a fixed camera and floor grid", () => {
@@ -60,8 +60,8 @@ describe("createArenaScene", () => {
   });
 
   it.each([
-    ["player", Math.PI],
-    ["opponent", 0],
+    ["player", 0],
+    ["opponent", Math.PI],
   ] as const)(
     "settles a staged fusion on the %s side's canonical facing",
     (side, expectedYaw) => {
@@ -84,6 +84,35 @@ describe("createArenaScene", () => {
       expect(result.rotation.y).toBeCloseTo(expectedYaw);
     },
   );
+
+  it.each([
+    ["player", 0],
+    ["opponent", Math.PI],
+  ] as const)(
+    "faces base and fusion beasts across the table on the %s side",
+    (side, expectedYaw) => {
+      for (const monsterId of ["Ember Imp", "Gale Hawk", "Moss Tortoise", "Inferno Beast"]) {
+        const arena = createArenaScene(16 / 9);
+        const monster = arena.placeMonster(monsterId, { side, slot: 1 });
+        expect(monster.rotation.y).toBeCloseTo(expectedYaw);
+        expect(monster.rotation.y).toBeCloseTo(monsterFacingYaw(side));
+      }
+    },
+  );
+
+  it("updates facing when a beast moves to the other side", () => {
+    const arena = createArenaScene(16 / 9);
+    const monster = arena.placeMonster(
+      "moving-beast",
+      { side: "player", slot: 0 },
+      new THREE.Group(),
+    );
+    expect(monster.rotation.y).toBeCloseTo(0);
+
+    arena.moveMonster("moving-beast", { side: "opponent", slot: 0 });
+
+    expect(monster.rotation.y).toBeCloseTo(Math.PI);
+  });
 
   it("publishes animation events to read-only integrations", () => {
     const arena = createArenaScene(16 / 9);

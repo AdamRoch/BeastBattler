@@ -38,6 +38,11 @@ interface PlacedMonster {
 
 export type ArenaAnimationListener = (event: ArenaAnimationEvent) => void;
 
+/** Models are authored facing -Z, so each side's yaw points across the table. */
+export function monsterFacingYaw(side: PlayerSide): number {
+  return side === "player" ? 0 : Math.PI;
+}
+
 export interface ArenaScene {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -147,7 +152,7 @@ export function createArenaScene(aspect: number): ArenaScene {
 
     const monster = object ?? createMonsterModel(monsterId);
     monster.position.copy(getZonePosition(zone));
-    monster.rotation.set(0, zone.side === "player" ? Math.PI : 0, 0);
+    monster.rotation.set(0, monsterFacingYaw(zone.side), 0);
     monster.userData.monsterId = monsterId;
     monsterLayer.add(monster);
 
@@ -174,7 +179,7 @@ export function createArenaScene(aspect: number): ArenaScene {
     occupancy.set(destinationKey, monsterId);
     placement.zoneKey = destinationKey;
     placement.object.position.copy(getZonePosition(zone));
-    placement.object.rotation.y = zone.side === "player" ? Math.PI : 0;
+    placement.object.rotation.y = monsterFacingYaw(zone.side);
   }
 
   function removeMonster(monsterId: string): THREE.Object3D | undefined {

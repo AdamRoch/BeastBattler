@@ -112,12 +112,12 @@ describe("arena animation events", () => {
     arena.update(31);
     expect(first.position.equals(firstPosition)).toBe(false);
     expect(result.scale.x).toBeGreaterThan(1);
-    expect(result.rotation.y).not.toBeCloseTo(Math.PI);
+    expect(result.rotation.y).not.toBeCloseTo(0);
     expect(animationLayer(arena).getObjectByName("animation-flash")).toBeDefined();
     arena.update(32.5);
     expect(first.visible).toBe(false);
     expect(second.visible).toBe(false);
-    expect(result.rotation.y).toBeCloseTo(Math.PI);
+    expect(result.rotation.y).toBeCloseTo(0);
 
     first.visible = true;
     second.visible = true;

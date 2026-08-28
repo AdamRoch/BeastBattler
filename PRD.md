@@ -187,6 +187,9 @@ Each archetype's extra deck contains exactly the **3 fusion monsters** matching 
 
 - **Scene:** dark sci-fi duel arena (Yu-Gi-Oh hologram-field energy). Subtle floor grid, element-tinted accent lighting per player side, restrained camera (slight idle drift; punch-in on summon/fusion).
 - **Monsters:** procedural low-poly models composed from primitives, built per element family (5 archetypes with palette/appendage variation across the 25 monsters).
+- **Facing:** every beast rests facing across the table toward the opposing
+  side. Fusion may rotate the result for its reveal, but it returns to that
+  side's canonical facing when the animation ends.
 - **Hologram shader:** additive glow, fresnel rim light, scanlines, slight flicker, element color palette. Monsters read as projections, not solid matter.
 - **Card art:** in-engine render-to-portrait — each 3D monster posed against its element backdrop, rendered to an image used as its card art. No external art pipeline for cards.
 - **Logo/title art:** generated externally with a text-to-image tool (owner-provided, 3–5 generations budgeted).
