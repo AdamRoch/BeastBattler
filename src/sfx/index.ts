@@ -92,7 +92,7 @@ interface BackgroundMusicElement {
 }
 
 const STORAGE_KEY = "beast-battler:sfx:v1";
-const DEFAULT_SETTINGS: SfxSettings = { muted: false, volume: 0.32 };
+const DEFAULT_SETTINGS: SfxSettings = { muted: false, volume: 1 };
 const BACKGROUND_MUSIC_SOURCE = "/audio/background-music.mp3";
 const BACKGROUND_MUSIC_GAIN = 0.16;
 const ANNOUNCER_GAIN = 1.5;
